@@ -24,7 +24,7 @@ process.env.TONE_URL = '';
 process.env.VOICE_URL = '';
 const { Gallery } = await import('../src/voices/gallery.js');
 const { VoiceTracker } = await import('../src/voices/tracker.js');
-const { mightHaveName, patternName } = await import('../src/voices/names.js');
+const { mightHaveName, patternName, isWhoAreYou, whoIsName } = await import('../src/voices/names.js');
 const { Session } = await import('../src/session.js');
 const store = await import('../src/store.js');
 after(async () => {
@@ -268,7 +268,7 @@ test('session: a reply too short to check on its own takes the voice of the rest
 
   const u = (id: string, role: Utterance['role'], startMs: number, endMs: number, text: string): Utterance =>
     ({ id, role, isWearer: role === 'wearer', text, startMs, endMs, rmsDb: -30, speaker: null, name: null });
-  const q = u('q3', 'wearer', 0, 1000, 'Who are you?');
+  const q = u('q3', 'wearer', 0, 1000, 'Who reads with me on Sundays?');
   options.onUtterance(q);
   options.onWearerQuestion(q);
   const short = u('a3', 'other', 1200, 2000, 'Hi, I\'m Tom.');
@@ -293,4 +293,54 @@ test('tracker: a known visitor is shown even when the glasses tag his line "self
   await h.say('wearer', 20_000, 22_000, 'It is not showing who is speaking.'); // the real wearer
   assert.equal(h.g.wearerSamples, 1);
   assert.equal(h.g.list()[0].heard, heardBefore); // tagged lines show the name but don't count as samples
+});
+
+test('names: questions about who someone is', () => {
+  for (const q of ['Who are you?', 'Sorry, who are you?', "What's your name again?", 'Who is this?', 'Remind me who you are.'])
+    assert.equal(isWhoAreYou(q), true, q);
+  for (const q of ['Who is coming today?', 'Who are you going with?', 'Where are you?']) assert.equal(isWhoAreYou(q), false, q);
+  assert.equal(whoIsName('Who is Kevin?'), 'Kevin');
+  assert.equal(whoIsName("Who's the Kevin?"), 'Kevin');
+  assert.equal(whoIsName('Who is this?'), null);
+  assert.equal(whoIsName('Who is coming over today?'), null);
+});
+
+test('tracker: "Who is Kevin?" shows what Kevin said about himself; "Who are you?" names whoever just talked', async () => {
+  const h = tracker([{ fromMs: 0, voice: KEVIN }], { "Hi, I'm Kevin.": finding('Kevin', 'self_intro') });
+  await h.say('other', 0, 1200, "Hi, I'm Kevin.");
+  await h.say('other', 1400, 4500, "I'm your neighbor from the blue house next door.");
+  await h.say('other', 4700, 9000, 'I come by every Sunday to check on you and bring you the newspaper.');
+  const kevin = h.g.byName('kevin');
+  assert.equal(kevin?.about?.text, "Hi, I'm Kevin. I'm your neighbor from the blue house next door."); // whole sentences, under 100 characters
+  assert.deepEqual(h.t.answerWho("Who's the Kevin?", 20_000)?.text, kevin?.about?.text);
+  assert.equal(h.t.answerWho('Sorry, who are you?', 20_000)?.name, 'Kevin');
+  assert.equal(h.t.answerWho('Who are you?', 60_000), null); // nobody talked in the last 30 s
+  assert.equal(h.t.answerWho('Who is Mary?', 20_000), undefined); // unknown: the matcher may still know
+  assert.equal(h.t.answerWho('When is lunch?', 20_000), undefined);
+});
+
+test('session: "Who are you?" is never stored as a pair', async (t: TestContext) => {
+  let options!: SpeechOptions;
+  const phone = new Phone();
+  const deps: SessionDependencies = {
+    createSpeech: value => { options = value; return { pushAudio() {}, pause() {}, resume() {}, close: async () => {} }; },
+    findMatch: async question => ({ match: null, log: { question, decision: 'none', ms: 0 } }),
+    isReply: async () => true, warm: async () => {}, analyzeQuestion: async () => null,
+    embedVoice: async pcm => ({ ok: true, print: print(unit(0, 0, 0, 0, 0, 1), pcm.byteLength / 32_000) }),
+    extractName: async () => null,
+  };
+  new Session(phone as unknown as WebSocket, deps);
+  t.after(() => phone.terminate());
+  phone.json({ v: 1, type: 'hello', session: 'voices-who', source: 'glasses' });
+  for (let i = 0; i < 100; i++) phone.audio(Buffer.alloc(3200));
+  const u = (id: string, role: Utterance['role'], startMs: number, endMs: number, text: string): Utterance =>
+    ({ id, role, isWearer: role === 'wearer', text, startMs, endMs, rmsDb: -30, speaker: null, name: null });
+  const q = u('q9', 'wearer', 0, 1000, 'Sorry, who are you?');
+  options.onUtterance(q);
+  options.onWearerQuestion(q);
+  const a = u('a9', 'other', 1500, 4500, "Hi, I'm Dora, the new nurse.");
+  options.onUtterance(a);
+  options.onPair({ question: q, answer: a });
+  await settle();
+  assert.equal(store.allRecords().some(r => r.answer === "Hi, I'm Dora, the new nurse."), false);
 });

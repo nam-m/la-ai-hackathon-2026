@@ -141,6 +141,7 @@ export class Gallery {
       twin.samples = [...twin.samples, ...v.samples]
       if (twin.samples.length > VOICE.MAX_SAMPLES) twin.samples = [twin.samples[0], ...twin.samples.slice(-(VOICE.MAX_SAMPLES - 1))]
       twin.heard += v.heard
+      twin.about ??= v.about
       twin.lastSeenAt = v.lastSeenAt > twin.lastSeenAt ? v.lastSeenAt : twin.lastSeenAt
       this.remove(id)
       this.aliases.set(id, twin.id)
@@ -151,6 +152,19 @@ export class Gallery {
     v.evidence = evidence
     this.persist.save(v)
     return { ok: true, voice: v, merged: false }
+  }
+
+  /** What a person said about themselves, shown for "Who is Kevin?" and "Who are you?". */
+  setAbout(id: string, text: string, at: string) {
+    const v = this.get(id)
+    if (!v || v.about?.text === text) return
+    v.about = { text, at: v.about?.at ?? at }
+    if (v.name) this.persist.save(v)
+  }
+
+  /** A named voice by name, any case. */
+  byName(name: string) {
+    return this.list().find(v => v.name?.toLowerCase() === name.trim().toLowerCase())
   }
 
   remove(id: string) {

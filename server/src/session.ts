@@ -11,7 +11,7 @@ import { distanceM, isHome, isWhereAmI, locationText, type Fix } from './locatio
 import { findUpdate, mightUpdate } from './updates.js'
 import { dayLabel, dayOf } from './when.js'
 import * as voiceClient from './voices/client.js'
-import { extractName } from './voices/names.js'
+import { extractName, isWhoAreYou } from './voices/names.js'
 import { VoiceTracker } from './voices/tracker.js'
 import type { PhoneMessage, QARecord, ServerMessage } from './types.js'
 
@@ -281,6 +281,21 @@ export class Session {
     const toneClip = this.ring.get(Math.max(0, q.startMs - TONE_PAD_MS), Math.min(q.endMs + TONE_PAD_MS, this.ring.receivedMs))
     void this.dependencies.analyzeQuestion(eventId, toneClip).catch(() => undefined)
 
+    // "Who are you?" depends on whom it is asked: answered by voice recognition, never from stored pairs.
+    // "Who is Kevin?": what Kevin said about himself when he introduced himself.
+    const who = this.voices?.answerWho(q.text, q.startMs)
+    if (who !== undefined || isWhoAreYou(q.text)) {
+      if (!this.isCurrent(q.id, generation)) return
+      const day = who ? dayLabel(who.at) : undefined
+      if (who && this.send({ v: 1, type: 'answer', id: store.newId('who'), text: who.text, speaker: who.name, at: formatTime(who.at), ...(day ? { day } : {}), source: 'spoken' })) {
+        store.updateEvent(eventId, { matchedRecordId: `voice:${who.name}` })
+        console.log(`[voice ${this.name}] who -> ${who.name}: ${who.text}`)
+      } else {
+        console.log(`[voice ${this.name}] who: nobody remembered is talking`)
+      }
+      return
+    }
+
     // "Where am I?" is answered from the phone's GPS, not from what anyone said.
     if (isWhereAmI(q.text)) {
       const answer = await this.locationAnswer()
@@ -330,6 +345,10 @@ export class Session {
   private async tryPair(p: QAPair, generation: number, answeredAt: number): Promise<boolean> {
     if (!this.isCurrent(p.question.id, generation)) return false
     const gap = p.answer.startMs - p.question.endMs
+    if (isWhoAreYou(p.question.text)) {
+      console.log(`[store ${this.name}] not stored: "${p.question.text}" depends on whom it was asked (voice recognition answers it)`)
+      return false
+    }
     if (p.question.role !== 'wearer' || p.answer.role !== 'other' || !Number.isFinite(gap) || gap < 0 || gap > 30_000) {
       console.log(`[store ${this.name}] skipped pair, roles ${p.question.role} -> ${p.answer.role}`)
       return false

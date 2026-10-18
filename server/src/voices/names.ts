@@ -31,6 +31,19 @@ const capitalizedWords = (text: string) => {
   return words
 }
 
+// Questions about who someone is. "Who are you?" depends on whom it is asked, so it is never stored or matched as
+// a pair; voice recognition answers it. "Who is Kevin?" is answered from what Kevin said about himself.
+const WHO_ARE_YOU = /^(?:(?:sorry|excuse me|hi|hello|um|uh|so|and|wait|okay|ok)[,.]?\s+)*(?:who are you|who's this|who is this|what's your name|what is your name|remind me who you are|do i know you|have we met)(?:\s+again)?(?:,?\s+(?:sorry|again|please))?\s*[?.!]*$/i
+const WHO_IS = /^(?:(?:sorry|excuse me|um|uh|so|and|wait|okay|ok)[,.]?\s+)*who(?:'s| is| was)\s+(?:the\s+)?(\p{L}[\p{L}'-]+)(?:\s+again)?\s*[?.!]*$/iu
+const NOT_A_PERSON = new Set(['this', 'that', 'it', 'he', 'she', 'there', 'here', 'coming', 'visiting', 'next', 'calling', 'that?', 'they'])
+
+export const isWhoAreYou = (text: string) => WHO_ARE_YOU.test(text.trim())
+/** "Who is Kevin?" -> "Kevin"; null for any other question. */
+export function whoIsName(text: string): string | null {
+  const m = WHO_IS.exec(text.trim())
+  return m && !NOT_A_PERSON.has(m[1].toLowerCase()) ? m[1] : null
+}
+
 /** Is the newest line worth a Claude call? */
 export function mightHaveName(lines: NameLine[]) {
   const last = lines[lines.length - 1]

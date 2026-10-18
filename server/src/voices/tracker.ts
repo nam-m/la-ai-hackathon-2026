@@ -6,7 +6,20 @@ import type { Utterance } from '../speech/index.js'
 import type { ServerMessage } from '../types.js'
 import type { EmbedResult } from './client.js'
 import { Gallery, VOICE, cleanName, label } from './gallery.js'
-import { MIN_CONFIDENCE, mightHaveName, type NameFinding, type NameLine } from './names.js'
+import { MIN_CONFIDENCE, isWhoAreYou, mightHaveName, whoIsName, type NameFinding, type NameLine } from './names.js'
+
+const ABOUT_MAX_CHARS = 100 // fits the glasses' two lines
+
+/** The turn's words as one "about me", whole sentences only, or null when it says no more than the name. */
+function aboutText(texts: string[], name: string) {
+  let out = ''
+  for (const sentence of texts.join(' ').split(/(?<=[.!?])\s+/)) {
+    const next = out ? `${out} ${sentence}` : sentence
+    if (next.length > ABOUT_MAX_CHARS) break
+    out = next
+  }
+  return out.length > name.length + 12 ? out : null
+}
 
 const TURN_GAP_MS = 1500 // other-lines closer than this (with no wearer line between) are one person's turn
 const TURN_WINDOW_MS = 6000 // newest audio of the turn used per check
@@ -78,6 +91,8 @@ type Turn = {
   queue: Promise<unknown>
   /** Waiting for this turn's voice to have a name (answers saved before the voice was known). */
   callbacks: ((name: string) => void)[]
+  texts: string[] // what was said in the turn, for "about me"
+  describes?: string // voice whose "about me" this turn is (they gave their name in it)
 }
 
 export const trackers = new Set<VoiceTracker>()
@@ -158,10 +173,37 @@ export class VoiceTracker {
 
   close() { trackers.delete(this) }
 
+  private describe(turn: Turn, voiceId: string) {
+    const v = this.gallery.get(voiceId)
+    if (!v?.name || (v.about && turn.describes !== voiceId)) return // the first introduction is kept
+    turn.describes = voiceId
+    const about = aboutText(turn.texts, v.name)
+    if (about) this.gallery.setAbout(voiceId, about, new Date().toISOString())
+  }
+
+  /**
+   * "Who are you?" -> whoever talked to the wearer in the last 30 s, if remembered; "Who is Kevin?" -> what Kevin
+   * said about himself. undefined = not such a question (or nothing known for "Who is X?": the matcher may know).
+   */
+  answerWho(text: string, atMs: number): { name: string; text: string; at: string } | null | undefined {
+    const asked = whoIsName(text)
+    if (asked) {
+      const v = this.gallery.byName(asked)
+      return v?.about ? { name: v.name!, text: v.about.text, at: v.about.at } : undefined
+    }
+    if (!isWhoAreYou(text)) return undefined
+    const v = this.recent && atMs - this.recent.atMs < RECENT_MS ? this.gallery.get(this.recent.voiceId) : undefined
+    if (!v?.name) return null
+    return { name: v.name, text: v.about?.text ?? `This is ${v.name}.`, at: v.about?.at ?? v.lastSeenAt }
+  }
+
   private onOther(u: Utterance, transcriptId: string) {
     if (!this.turn || u.startMs - this.turn.endMs > TURN_GAP_MS) this.startTurn(u)
     const turn = this.turn!
     turn.endMs = Math.max(turn.endMs, u.endMs)
+    turn.texts.push(u.text)
+    // They gave their name earlier in this turn: what follows belongs to their "about me" too.
+    if (turn.describes) this.describe(turn, turn.describes)
     const job = turn.queue.then(() => this.identify(turn, u, transcriptId))
     turn.queue = job.catch(() => undefined)
     this.results.set(u.id, { turn, job: job.catch(() => null) })
@@ -170,7 +212,7 @@ export class VoiceTracker {
 
   private startTurn(u: Utterance) {
     this.endTurn()
-    this.turn = { startMs: u.startMs, endMs: u.endMs, voiceId: null, queue: Promise.resolve(), callbacks: [] }
+    this.turn = { startMs: u.startMs, endMs: u.endMs, voiceId: null, queue: Promise.resolve(), callbacks: [], texts: [] }
     if (this.addressed && u.startMs <= this.addressed.untilMs) this.turn.pendingName = this.addressed
     this.addressed = null
   }
@@ -335,5 +377,6 @@ export class VoiceTracker {
     }
     turn.voiceId = res.voice.id
     this.log({ kind: 'named', text, voiceId: res.voice.id, voice: label(res.voice), detail: res.merged ? 'merged with the voice already saved under this name' : 'saved' })
+    if (finding.kind !== 'addressed_by_wearer') this.describe(turn, res.voice.id)
   }
 }

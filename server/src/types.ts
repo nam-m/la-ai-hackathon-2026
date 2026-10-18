@@ -43,6 +43,8 @@ export type VoiceRecord = {
   lastSeenAt: string // ISO
   heard: number // utterances recognized as this voice
   evidence?: NameEvidence
+  /** What they said about themselves when they gave their name, word for word ("Hi, I'm Kevin. I live next door."). */
+  about?: { text: string; at: string }
 }
 
 /** Every wearer question, counted separately from stored answers (so summaries can say "asked 4 times"). */
