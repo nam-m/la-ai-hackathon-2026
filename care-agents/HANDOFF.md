@@ -45,6 +45,20 @@ Seed data is embedded in each agent as reference data (pasted inline; file attac
 4. Server link, partly tested 07:40 PT: from a CREAO chat sandbox, outbound HTTPS to arbitrary public hosts works (POST JSON to httpbin.org 200 in 0.4s, api.github.com 200, example.com 200). So an agent can POST to our server's /facts or /proposals IF the server has a public HTTPS URL (a laptop localhost needs a tunnel such as ngrok or a deploy). Not yet tested from a registered agent's own run (only the chat sandbox), with a real token as a CREAO secret, or from a dashboard form. CREAO dashboard form input and text/SMS connector are also untested; only email scheduled-run delivery is documented.
 5. The agents return proposals only. Nothing writes facts anywhere; the confirm page and server enforcement of roles are not built yet.
 
+## CREAO developer API: verified facts (Sun 2026-10-18, ~09:50 PT)
+
+These replace the older v1 notes in `Build Guide.md` section 6 and the comments in `server/src/creao/client.ts`, which describe `/v1`, `workspace_id` and a files endpoint. Found by read-only GETs from a CREAO chat using the stored secrets; `POST /v2/runs` is not tested yet.
+
+- Base URL `https://developer.creao.ai/v2/...`, header `Authorization: Bearer <project key>`. The stored secrets `CREAO_CR_SK_KEY` and `CREAO_CR_SK_KEY_1` are valid `/v2` project keys (`/v2/me`, `/v2/runs`, `/v2/agents` returned 200). They return 401 on `/v1`. Keep the second as a spare; the docs allow 10 active keys per project. `CREAO_API_KEY` is untested.
+- Server side only. Never in browser code, the repo or chat. A saved CREAO agent reads its stored secrets from the environment the same way.
+- `POST /v2/runs`: `input` (object, required, up to 256 KB), `agent_id` (optional UUID; omitted means the general agent), `conversation_id` (optional; reuse it to continue context), `webhook_url` and `model` (optional; model must be an exact catalog id such as `anthropic/claude-sonnet-5-5`). There is no `workspace_id`. Returns 202 with `run_id` and `conversation_id`.
+- `GET /v2/runs/{run_id}`: poll until `completed`, `failed` or `cancelled`. Polling works without a public URL, so a webhook is optional.
+- IDs must be UUIDs (`run_does_not_exist` returns 400 `INVALID_INPUT`). A run from another project returns 404.
+- Limits: 30 reads per minute, 30 run creations per minute per developer account, 120 requests per minute per IP. On 429 wait for `Retry-After` and back off. Do not retry run creation in a loop.
+- Cost: every accepted run can bill the USD wallet when it finishes (not chat credits).
+- Streaming: `POST /v2/realtime/runs` streams NDJSON (same body minus `webhook_url`).
+- Still to verify: that `agent_id` runs one of our four saved agents, what its output looks like on `GET /v2/runs/{id}`, and that a saved agent accepts the server's log as `input` instead of its embedded seed.
+
 ## Next steps
 
 1. Decide how the server is reachable (tunnel or deploy), then have Care assistant POST a proposal to it from a registered agent run. If not reachable, demo the confirm flow from seeded data.
