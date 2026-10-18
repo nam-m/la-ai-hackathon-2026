@@ -65,7 +65,8 @@ const run = async (pairs: [string, string][], expect: boolean) => {
   }
 }
 
-console.log(`matcher: ${process.env.GEMINI_API_KEY ? 'gemini' : 'local fallback'}\n`)
+const { config } = await import('../src/config.js')
+console.log(`matcher: ${config.geminiApiKey ? `gemini embeddings, ${config.verifyProvider} yes/no checks` : 'local fallback'}\n`)
 await run(shouldMatch, true)
 console.log()
 await run(shouldNotMatch, false)

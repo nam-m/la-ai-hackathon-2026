@@ -13,6 +13,13 @@ function hhmm(name: string, fallback: string) {
   return fallback
 }
 
+function verifyProvider(): 'gemini' | 'stepfun' {
+  const v = env('VERIFY_PROVIDER', 'gemini').trim().toLowerCase()
+  if (v === 'gemini' || v === 'stepfun') return v
+  console.warn(`[config] VERIFY_PROVIDER=${process.env.VERIFY_PROVIDER} is not gemini or stepfun; using gemini`)
+  return 'gemini'
+}
+
 export const config = {
   port: Number(env('PORT', '8080')),
   appToken: env('APP_TOKEN', 'change-me-app'),
@@ -26,6 +33,11 @@ export const config = {
   geminiApiKey: env('GEMINI_API_KEY'),
   embedModel: env('EMBED_MODEL', 'gemini-embedding-001'),
   verifyModel: env('VERIFY_MODEL', 'gemini-2.5-flash'),
+  // Who answers the yes/no checks. Embeddings always use Gemini (StepFun has no embeddings API).
+  verifyProvider: verifyProvider(),
+  stepfunApiKey: env('STEPFUN_API_KEY'),
+  stepfunBaseUrl: env('STEPFUN_BASE_URL', 'https://api.stepfun.ai/v1'), // international; api.stepfun.com for China-region keys
+  stepfunModel: env('STEPFUN_MODEL'), // pick a fast chat model from platform.stepfun.com
   matchThreshold: Number(env('MATCH_THRESHOLD', '0.80')),
   dataFile: env('DATA_FILE', './data/store.json'),
   toneUrl: env('TONE_URL'), // empty = tone analysis off
