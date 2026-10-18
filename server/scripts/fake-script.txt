@@ -1,5 +1,13 @@
-# endMs<TAB>role<TAB>family name or -<TAB>verbatim transcript
-500	wearer	-	What time is lunch?
-1400	other	Sarah	Lunch is at noon.
-2300	wearer	-	When is lunch?
-3200	other	Sarah	Lunch is at noon.
+# Fake conversation for SPEECH_PROVIDER=fake.
+# Format: <seconds after previous line> | <wearer|Name|unknown> | <text>
+# A wearer line ending in "?" is a question. Every named (role "other") line within 30 s is a candidate answer;
+# the server saves the first that replies to it. "unknown" lines are never answers. A new question closes the window.
+2 | wearer | What time is lunch?
+2 | Sarah | Lunch is at noon.
+3 | Sarah | I'm going to water the plants.
+3 | wearer | Is it a nice day outside
+4 | wearer | When do we eat?
+4 | wearer | Where is lunch?
+3 | Sarah | We're eating on the patio today.
+4 | wearer | Where is Mary?
+4 | wearer | What time do we eat lunch?

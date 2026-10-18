@@ -1,129 +1,78 @@
-# Role B: speech
+# Asked & Answered — Part C server
 
-Implemented: server-side ElevenLabs and Deepgram streaming, raw PCM regrouping, silence filtering with preroll and VAD tail, source-time/RMS mapping, wearer classification, Deepgram setup/name mapping, question detection, 30-second Q&A capture, fake replay, calibration, and latency instrumentation. ElevenLabs is the user's selected default.
+The server everything talks to: the phone socket (contract 1), the Q&A store, the repeat matcher, and the HTTP endpoints for Creao (contract 4). B's speech code and D's Creao code plug in as modules (contracts 2 and 5).
 
-The public module is `src/speech/index.ts`; `speech/index.ts` re-exports it for the shorter path in the Build Guide. The existing callback contract is unchanged. Storage and matching belong to C: `onPair` supplies a pair to C's store and `onWearerQuestion` fires immediately for C's matcher. This package does not start C's HTTP server or implement A's glasses app.
+## Run it
 
-## Run locally
-
-Requires Node 22.9+ (Node 24 recommended). From `server/`:
-
-```powershell
-npm ci
-npm run typecheck
-npm test
-npm run speech:demo
-npm run build
-node dist/scripts/speech-demo.js
+```bash
+npm install
+cp .env.example .env        # fill in GEMINI_API_KEY, APP_TOKEN, FACTS_SECRET
+npm run dev                 # server on :8080, restarts on save
 ```
 
-The demo reads `scripts/fake-script.txt`, emits two questions and two verbatim pairs, and exits with failure if those counts differ. It requires no credentials and makes no API calls. A custom fake script is a tab-separated file containing `endMs`, `wearer` or `other`, family name or `-`, and transcript text; pass `fakeScriptPath` to the factory.
+In a second terminal, test the whole loop without glasses:
 
-## Configure ElevenLabs
-
-```powershell
-Copy-Item .env.example .env
+```bash
+npm run seed-facts          # posts 3 sample caregiver facts, like D will
+npm run fake-phone          # pretends to be A's app; prints what the glasses would show
 ```
 
-Set `ELEVENLABS_API_KEY` in `.env`, with `SPEECH_PROVIDER=elevenlabs`. Populate `SPEECH_WEARER_THRESHOLD_DB` from the real-microphone calibration below. Do not use the synthetic test amplitudes as a real threshold. API keys are read only on the server, sent in provider headers, and excluded from version control.
+With `SPEECH_PROVIDER=fake`, the server replays `scripts/fake-script.txt` as if people were talking. You should see the repeated lunch question answered and "Where is Mary?" answered from the family fact.
 
-`speechOptionsFromEnv()` defaults to ElevenLabs and validates environment settings. It does not load `.env` by itself; the replay command uses Node's env-file support. C should load its server environment before calling it. A missing live API key fails creation; a missing wearer threshold allows transcripts but emits no wearer questions or pairs. No speaker label is assumed to be the wearer.
+## Files
 
-## Loudness calibration with A
+| File | Owner | What it does |
+| --- | --- | --- |
+| `src/index.ts` | C | HTTP routes, `/ws` upgrade with token check, heartbeat, reminders, Creao log every 5 min, scheduled summary/patterns, midnight expiry |
+| `src/facts.ts` | C | Fact validation and saving (shared by `/facts` and Creao runs); `creaoStore` for D's router |
+| `src/session.ts` | C | One phone connection: messages, pause/resume, 60-second audio buffer for tone, matching, saving pairs, idle close |
+| `src/matcher.ts` | C | Embeddings + cosine + yes/no double-check; any failure returns nothing |
+| `src/store.ts` | C | Q&A records and cached embeddings, saved to a JSON file |
+| `src/types.ts` | all | Contract shapes |
+| `src/speech/index.ts` | **B** | ElevenLabs live speech, Deepgram fallback, fake provider; [Role B setup and calibration](src/speech/README.md) |
+| `src/creao/index.ts` | **D** | Creao module; ships as logging stubs. D replaces them |
+| `src/emotion/index.ts` | C | Cuts each wearer question's audio, sends it to `tone-service/`, stores the tone record |
+| `src/wav.ts` | C | WAV header and the 60-second rolling audio buffer |
 
-1. With everyone's consent, use A's G2 microphone capture to save raw PCM or WAV files. The input must be signed 16-bit little-endian, 16 kHz, mono. Use the glasses microphone and the same gain intended for the demo, not an unrelated laptop recording.
-2. Record at least five separate sentences from the wearer and five from teammates across the table, including quiet/loud speech and venue noise. Each file should contain one sentence, trimmed to its speech region; long leading/trailing silence biases whole-sentence RMS.
-3. Save recordings in the gitignored `data/` directory and create a manifest like `examples/calibration-manifest.json`, with paths relative to the manifest.
-4. Run the calibration command and use the resulting `providerOptions.wearerThresholdDb` as `SPEECH_WEARER_THRESHOLD_DB` only when `clearGap` is true.
+## Endpoints
 
-```powershell
-npm run speech:calibrate -- --manifest data/recordings.json --output data/calibration.json
+| Method and path | Auth | Purpose |
+| --- | --- | --- |
+| `GET /health` | none | Status, session count, which matcher is active |
+| `WS /ws?token=APP_TOKEN` | token | Phone socket, contract 1 |
+| `POST /facts` | `Bearer FACTS_SECRET` | Add or replace caregiver facts and reminders |
+| `DELETE /facts/:id` | `Bearer FACTS_SECRET` | Remove one fact |
+| `GET /qa/today` | `Bearer FACTS_SECRET` | Today's spoken pairs for the dashboard |
+| `GET /log/today` | `Bearer FACTS_SECRET` | Transcript, every question with its tone, repeated questions with counts and worry per ask, contradictions (spoken answer vs family fact), reminders with `scheduled`/`sent`/`missed` |
+| `GET`/`POST /settings` | `Bearer FACTS_SECRET` | `{"toneAnalysis": true\|false}` |
+| `POST /creao/webhook?s=WEBHOOK_SECRET` | secret in the URL (`webhookUrl()` in `config.ts`), separate from `FACTS_SECRET`; D's handler also verifies run IDs | Creao run results |
+| `POST /creao/summary` | `Bearer FACTS_SECRET` | Trigger the end-of-day summary by hand in the demo |
+| `POST /debug/match` | `Bearer FACTS_SECRET` | `{"question":"..."}` → what the matcher would answer, with its score. Not served when `NODE_ENV=production` (the Dockerfile sets it) |
+
+## Background jobs
+
+- **Idle check:** a phone that sends nothing (no audio, no ping) for 45 s is disconnected, which closes its speech stream.
+- **Creao log:** every 5 minutes, `submitLog` with new transcript, pairs, questions and tone (window ends 15 s ago).
+- **Summary and patterns:** `runSummary` at `SUMMARY_AT` (20:00) and `runPatterns` at `PATTERNS_AT` (23:30), wearer's local time, once a day, within 15 minutes after the time (a server started later doesn't fire them). The window doesn't cross midnight, so keep both at 23:45 or earlier. A missed or failed run isn't retried; use `POST /creao/summary`.
+- **Reminders:** sent to listening phones within 5 minutes of `remindAt`, otherwise marked `missed`; the status shows in `/log/today`. No backlog after a reconnect.
+- **Tone probe:** every 30 s until the tone service answers with its model loaded.
+
+## Tuning the matcher
+
+```bash
+npm run test:matcher                       # 20 should-match, 10 look-alikes
+MATCH_THRESHOLD=0.85 npm run test:matcher  # try another threshold
 ```
 
-The report contains each sentence's RMS, class distributions, the gap between the quietest wearer and loudest other person, and a midpoint threshold. It recommends ElevenLabs only with a minimum 6 dB gap. Overlap produces `thresholdDb: null` and recommends Deepgram. This implements the planned test; no real G2 calibration has been performed in this checkout.
+Goal: **0 wrong matches**, then as many repeats caught as possible. Set the winning value as `MATCH_THRESHOLD`. Every live match is logged as `[match ...]` with its score and decision, which is what you tune from at 3 AM.
 
-## Replay a recording through the actual service
+Without `GEMINI_API_KEY` the server uses a crude local matcher so it still runs; it is for testing plumbing only and does make wrong matches. Always demo with the key.
 
-```powershell
-npm run speech:replay -- data/conversation.wav
-```
+`EMBED_MODEL` and `VERIFY_MODEL` default to `gemini-embedding-001` and `gemini-2.5-flash`. If Google renames them, change the env vars, not the code.
 
-This sends the recording to the configured provider at real-time speed and prints timestamped utterances, wearer questions, pairs, and final-transcript latency. Only run it on recordings the participants agreed to transcribe. It accepts `.pcm` with the format above or validated PCM WAV, then sends trailing silence to finalize the last sentence. Transcripts appear on stdout; do not commit captured logs.
+## Deploy (Render or Railway)
 
-The replay does not connect to glasses and cannot establish question-to-display latency. Check at least two separate commits in one live ElevenLabs connection: word timestamps are interpreted as connection-relative audio time. Out-of-range or unsafe multi-sentence timestamps fail closed; a real provider replay must verify origin and drift against the recording.
-
-## C integration
-
-Create one module per phone session. Start its clock when audio capture begins. Pass only the binary audio frames to `pushAudio`, not a WAV header or JSON. Input chunks may split 16-bit samples; the module rejoins them. Individual chunks are capped at ten seconds (320,000 bytes); normal G2 frames are much smaller.
-
-```typescript
-import { createSpeechModule } from './speech/index.js';
-import { speechOptionsFromEnv } from './speech/config.js';
-
-const sessionStartedAt = Date.now();
-const speech = createSpeechModule({
-  ...speechOptionsFromEnv(),
-  onUtterance: utterance => logFinalUtterance(utterance),
-  onWearerQuestion: question => {
-    void matchAndDeliver(question).catch(handleSessionError);
-  },
-  onPair: pair => {
-    // C owns persistence, daily expiry, and the store's shared record shape.
-    void savePair({
-      id: pair.answer.id,
-      question: pair.question.text,
-      answer: pair.answer.text,
-      askedAt: new Date(sessionStartedAt + pair.question.endMs).toISOString(),
-      answeredAt: new Date(sessionStartedAt + pair.answer.endMs).toISOString(),
-      answeredBy: pair.answer.name,
-      source: 'spoken',
-      standing: false,
-    }).catch(handleSessionError);
-  },
-  onError: handleSessionError,
-  onLatency: measurement => logLatency(measurement),
-});
-
-// A's binary frame: speech.pushAudio(pcm)
-// A's controls:     speech.pause(); speech.resume()
-// Socket teardown: await speech.close()
-```
-
-The host functions in this example are C's integration points, not functions supplied by B. Callbacks are synchronous notifications; C handles asynchronous matcher/store errors. Pause cancels pending Q&A and in-flight transcripts; resume starts a new connection. Transport failure is reported once and stops processing until `resume()` or session replacement; C can implement its reconnect policy around that signal. Closing is idempotent and releases timers/sockets. An idle ElevenLabs connection closes proactively and reopens on the next speech frame; its new provider timestamps are mapped back into the original session.
-
-## Classification and capture rules
-
-- ElevenLabs uses RMS from the exact source-audio sentence range. It has no live speaker labels or names, so `speaker` and `name` are null; A uses the plan's time-only display wording.
-- Timestamped multi-sentence ElevenLabs commits are split using the original transcript text and aligned word timestamps. Unsafe alignment is rejected before emitting any sentence. Answers are never generated, paraphrased, or semantically completed.
-- A wearer question ends with `?` or starts with a question word/auxiliary. The newest wearer question replaces an earlier pending question. Only the next identifiable other-speaker statement can answer it; an unknown speaker or clarification question cancels capture. Wearer statements cannot be saved as answers.
-- The answer must start after the question, within 30 seconds of original audio time, and arrive within 30 seconds of the final-question callback. Silence removed before transcription still counts toward the window. Overlap, duplicates, stale callbacks, and unavailable audio ranges do not create pairs.
-- RMS is a heuristic, not diarization. Two people inside one sentence, overlapping speech, changing gain, or similar voice levels can defeat it. The real three-person test determines whether ElevenLabs is suitable; use the fallback if that test fails.
-
-## Deepgram fallback and speaker setup
-
-Set `SPEECH_PROVIDER=deepgram` and `DEEPGRAM_API_KEY` in `.env`. Run setup while each person speaks alone:
-
-```typescript
-speech.calibrateNextSpeaker({ isWearer: true });
-// Wearer speaks one sentence and waits until it finalizes.
-speech.calibrateNextSpeaker({ isWearer: false, name: 'Sarah' });
-// Sarah speaks one sentence and waits until it finalizes.
-```
-
-Setup utterances are consumed without entering Q&A capture. The identified wearer label takes precedence over loudness; a calibrated threshold can classify unlabeled turns. `wearerSpeaker` and `speakerNames` options support a preconfigured initial connection, but labels are connection-local: pause/resume or recovery invalidates them, and setup must run again. Never assume label `0` belongs to the wearer. Only one setup request should be active at a time.
-
-## Timing and real-room acceptance
-
-`onLatency` first reports `transcriptMs` for each final wearer question. C can call `speech.markDisplayed(question.id, serverTimestamp)` only after A confirms the actual display to obtain `totalMs` and `withinTarget`. Sending a WebSocket answer is not proof of display. This hook does not change the agreed v1 phone protocol; A/C must arrange test instrumentation if they want an acknowledgement. Audio-clock timing assumes capture begins with module creation and uninterrupted real-time frames; account for transport/clock offsets when measuring the hardware.
-
-Before declaring Role B's live acceptance complete:
-
-1. Calibrate with real G2 recordings and verify the chosen threshold in quiet and venue noise.
-2. Run a real two-commit ElevenLabs replay and a pause of more than 15 seconds; confirm timestamps, idle reconnection, and pairs are correct.
-3. With three people, test wearer question → family answer → repeat, bystander question → wearer answer, overlapping speech, unrelated questions, and an answer more than 30 seconds later. Inspect every stored pair.
-4. Repeat pause/resume and disconnect/recovery; ensure no pre-pause pair leaks across the boundary.
-5. Have A and C measure actual question end → display over several repeats. Target B finalization ≤1 second and total ≤2 seconds; report measurements, not the synthetic demo's runtime.
-
-Automated tests cover framing/RMS, silence/timestamps, calibration/WAV rejection, both provider protocols and bounded queues, a real local WebSocket, sentence-level ElevenLabs Q&A, speaker setup, timeouts, overlap, duplicate suppression, pause/resume, recovery, fake playback, and idle connection rotation. External provider accuracy, network latency, and physical glasses behavior are not simulated acceptance evidence.
-
-Provider protocol sources are linked in `src/speech/elevenlabs.ts` and `src/speech/deepgram.ts`. The implementation uses server-side `ws` with the documented wire protocols, avoiding a browser SDK or exposed provider keys.
+- From the Dockerfile, or as a plain Node app (build: `npm ci`, start: `npm start`, Node 22.9+). Set `NODE_ENV=production` on a plain Node deploy.
+- Set every variable from `.env.example` in the dashboard. `PUBLIC_URL` is the service's HTTPS URL.
+- Both platforms support WebSockets on the same port. Give A the `wss://` URL and `APP_TOKEN`, and D the URL, `FACTS_SECRET` and the webhook URL from `webhookUrl()` (it contains `WEBHOOK_SECRET`).
+- Free tiers sleep when idle: hit `/health` before the demo, and know the JSON file store resets on redeploy (fine for a hackathon; re-run `seed-facts`).

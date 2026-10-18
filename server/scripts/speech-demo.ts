@@ -5,6 +5,12 @@ let questions = 0;
 let pairs = 0;
 const speech = createSpeechModule({
   provider: 'fake', apiKey: '',
+  fakeScript: [
+    { text: 'What time is lunch?', startMs: 0, endMs: 500, isWearer: true, name: null },
+    { text: 'Lunch is at noon.', startMs: 600, endMs: 1000, isWearer: false, name: 'Sarah' },
+    { text: 'Where is Mary?', startMs: 1200, endMs: 1700, isWearer: true, name: null },
+    { text: 'Mary is at home.', startMs: 1800, endMs: 2200, isWearer: false, name: 'Sarah' },
+  ],
   onUtterance: u => console.log(JSON.stringify({ event: 'utterance', ...u })),
   onWearerQuestion: question => { questions++; console.log(JSON.stringify({ event: 'question', text: question.text })); },
   onPair: pair => { pairs++; console.log(JSON.stringify({ event: 'pair', question: pair.question.text, answer: pair.answer.text, name: pair.answer.name })); },

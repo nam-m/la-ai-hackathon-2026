@@ -208,7 +208,6 @@ test('ElevenLabs fails closed before emitting any sentence if alignment is incom
     combinedCommit.words.filter((word) => word.text !== 'time'),
     combinedCommit.words.map((word) => word.text === 'lunch?' ? { ...word, text: 'dinner?' } : word),
     [{ text: 'What time is lunch?  Lunch is at noon.', start: 0.1, end: 1.8 }],
-    combinedCommit.words.map((word) => word.text === 'lunch?' ? { ...word, end: 1.15 } : word),
   ]) {
     const { provider, socket, errors, utterances } = setup();
     socket.message({ message_type: 'session_started' });
@@ -219,6 +218,21 @@ test('ElevenLabs fails closed before emitting any sentence if alignment is incom
     assert.match(errors[0]!.message, /align sentence/);
     await provider.close();
   }
+});
+
+test('ElevenLabs marks both precisely aligned sentences uncertain when their word times overlap', async () => {
+  const { provider, socket, errors, utterances } = setup();
+  socket.message({ message_type: 'session_started' });
+  provider.sendAudio(new Uint8Array(64_000));
+  socket.message({ ...combinedCommit,
+    words: combinedCommit.words.map(word => word.text === 'lunch?' ? { ...word, end: 1.15 } : word),
+  });
+  assert.deepEqual(errors, []);
+  assert.deepEqual(utterances, [
+    { text: 'What time is lunch?', startMs: 100, endMs: 1150, speaker: null, uncertain: true },
+    { text: 'Lunch is at noon.', startMs: 1100, endMs: 1800, speaker: null, uncertain: true },
+  ]);
+  await provider.close();
 });
 
 for (const [name, words] of [
@@ -269,16 +283,47 @@ test('ElevenLabs bounds the pending queue and rejects odd PCM', async () => {
 });
 
 test('ElevenLabs treats backpressure and send failures as terminal', async () => {
-  for (const reason of ['backpressure', 'send']) {
+  for (const reason of ['backpressure', 'payload-backpressure', 'send']) {
     const { provider, socket, errors } = setup();
     socket.message({ message_type: 'session_started' });
     if (reason === 'backpressure') socket.bufferedAmount = 256_001;
+    else if (reason === 'payload-backpressure') socket.bufferedAmount = 255_999;
     else socket.sendError = true;
     provider.sendAudio(new Uint8Array(3_200));
     assert.equal(errors.length, 1);
     assert.equal(errors[0]!.message.includes('SECRET'), false);
     await provider.close();
   }
+});
+
+test('ElevenLabs retains a single overlapping-word sentence but flags its attribution uncertain', async () => {
+  const { provider, socket, utterances, errors } = setup();
+  socket.message({ message_type: 'session_started' });
+  provider.sendAudio(new Uint8Array(32_000));
+  socket.message({ message_type: 'committed_transcript_with_timestamps', text: 'Do not leave.', words: [
+    { text: 'Do', start: 0.1, end: 0.7 },
+    { text: 'not', start: 0.3, end: 0.4 },
+    { text: 'leave.', start: 0.7, end: 0.9 },
+  ] });
+  assert.deepEqual(errors, []);
+  assert.deepEqual(utterances, [{ text: 'Do not leave.', startMs: 100, endMs: 900, speaker: null, uncertain: true }]);
+  await provider.close();
+});
+
+test('ElevenLabs still reports one safe error and settles close when transport termination throws', async () => {
+  const failed = setup();
+  failed.socket.terminate = () => { throw new Error('SECRET'); };
+  assert.doesNotThrow(() => failed.socket.emit('error', new Error('SECRET')));
+  assert.equal(failed.errors.length, 1);
+  assert.equal(failed.errors[0]!.message.includes('SECRET'), false);
+  failed.socket.close();
+  await failed.provider.close();
+
+  const closing = setup();
+  closing.socket.close = () => {};
+  closing.socket.terminate = () => { throw new Error('SECRET'); };
+  await closing.provider.close();
+  assert.deepEqual(closing.errors, []);
 });
 
 test('ElevenLabs closes idempotently, discards unfinished tail and suppresses callbacks', async () => {

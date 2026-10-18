@@ -1,0 +1,42 @@
+# Runs the server and the tone service together.
+#   cp server/.env.example server/.env   (server keys)
+#   cp .env.example .env                 (TONE_SECRET and tone settings, read by this file)
+#   docker compose up --build
+# Server: http://localhost:8080   Tone service: http://localhost:8000
+services:
+  server:
+    build: ./server
+    init: true
+    env_file: ./server/.env
+    environment:
+      TONE_URL: http://tone:8000   # overrides .env: inside compose the service is called "tone"
+      TONE_SECRET: ${TONE_SECRET:-change-me-tone}
+      DATA_FILE: /data/store.json  # overrides .env so the store lives on the volume
+      PORT: 8080                   # matches the port mapping below
+    ports:
+      - "${SERVER_HOST_PORT:-8080}:8080"   # set SERVER_HOST_PORT in ./.env if 8080 is taken on your machine
+    volumes:
+      - server-data:/data
+    depends_on:
+      - tone   # start order only: the server runs (and answers) even if tone is down or still loading
+    restart: unless-stopped
+
+  tone:
+    build: ./tone-service
+    init: true
+    # Only what the tone service needs; it never sees the server's API keys.
+    # These come from ./.env next to this file (or the shell), not from server/.env.
+    environment:
+      TONE_SECRET: ${TONE_SECRET:-change-me-tone}
+      TONE_MODEL: ${TONE_MODEL:-emotion2vec/emotion2vec_plus_base}
+      TONE_HUB: ${TONE_HUB:-hf}
+      TONE_MOCK: ${TONE_MOCK:-0}
+    ports:
+      - "${TONE_HOST_PORT:-8000}:8000"
+    volumes:
+      - tone-models:/models   # keeps the downloaded model between restarts
+    restart: unless-stopped
+
+volumes:
+  server-data:
+  tone-models:

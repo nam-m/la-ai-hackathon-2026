@@ -194,7 +194,78 @@ test('unknown or malformed speaker labels remain null without borrowing nearby i
   assert.deepEqual(h.utterances.map(value => value.speaker), ['0', null, null, '1']);
   h.socket.result({ type: 'Results', is_final: true, speech_final: true, start: 2, duration: 0.5,
     channel: { alternatives: [{ transcript: 'No word metadata.', words: [] }] } });
-  assert.deepEqual(h.utterances.at(-1), { text: 'No word metadata.', startMs: 2000, endMs: 2500, speaker: null });
+  assert.deepEqual(h.utterances.at(-1), { text: 'No word metadata.', startMs: 2000, endMs: 2500, speaker: null, uncertain: true });
+  await h.close();
+});
+
+test('mixed labels inside a single sentence retain text but cannot be confidently attributed', async () => {
+  const h = harness();
+  h.socket.open(); h.audio();
+  h.socket.result(result([word('Lunch', 0.1, 0.3, 0), word('is', 0.3, 0.5, 1), word('noon.', 0.5, 0.8, 1)], true));
+  assert.deepEqual(h.utterances, [
+    { text: 'Lunch', startMs: 100, endMs: 300, speaker: '0', uncertain: true },
+    { text: 'is noon.', startMs: 300, endMs: 800, speaker: '1', uncertain: true },
+  ]);
+  await h.close();
+});
+
+test('overlapping nested words across final segments are retained and marked uncertain', async () => {
+  const h = harness();
+  h.socket.open(); h.audio();
+  h.socket.result(result([word('Never', 0.1, 0.8, 0)]));
+  h.socket.result(result([word('go', 0.2, 0.4, 1), word('there.', 0.8, 1, 0)], true));
+  assert.deepEqual(h.utterances, [
+    { text: 'Never', startMs: 100, endMs: 800, speaker: '0', uncertain: true },
+    { text: 'go', startMs: 200, endMs: 400, speaker: '1', uncertain: true },
+    { text: 'there.', startMs: 800, endMs: 1000, speaker: '0', uncertain: true },
+  ]);
+  assert.equal(h.errors.length, 0);
+  await h.close();
+});
+
+test('overlap across punctuation marks both sentences uncertain and preserves maximum end time', async () => {
+  const h = harness();
+  h.socket.open(); h.audio();
+  h.socket.result(result([word('When?', 0.1, 0.8, 0), word('Noon.', 0.4, 1, 1)], true));
+  assert.equal(h.utterances.length, 2);
+  assert.ok(h.utterances.every(value => value.uncertain));
+  assert.equal(h.utterances[0]?.endMs, 800);
+  await h.close();
+});
+
+test('honorific abbreviations do not split or truncate an answer', async () => {
+  const h = harness();
+  h.socket.open(); h.audio();
+  h.socket.result(result([word('Ask', 0.1, 0.2), word('Dr.', 0.2, 0.4), word('Smith.', 0.4, 0.8)], true));
+  assert.deepEqual(h.utterances, [{ text: 'Ask Dr. Smith.', startMs: 100, endMs: 800, speaker: '0' }]);
+  await h.close();
+});
+
+test('final word rounding within one sample clamps to sent PCM, larger drift fails', async () => {
+  const good = harness();
+  good.socket.open(); good.audio(1);
+  good.socket.result(result([word('Okay.', 0.1, 1.00004)], true));
+  assert.equal(good.utterances[0]?.endMs, 1000);
+  assert.equal(good.errors.length, 0);
+  await good.close();
+  const bad = harness();
+  bad.socket.open(); bad.audio(1);
+  bad.socket.result(result([word('Drift.', 0.1, 1.0005)], true));
+  assert.equal(bad.utterances.length, 0);
+  assert.equal(bad.errors.length, 1);
+  await bad.close();
+});
+
+test('a reentrant terminal failure while emitting stops the remaining final sentences', async () => {
+  const delivered: ProviderUtterance[] = [];
+  const h = harness({ onUtterance(value) {
+    delivered.push(value);
+    h.provider.sendAudio(new Uint8Array(3));
+  } });
+  h.socket.open(); h.audio();
+  h.socket.result(result([word('First.', 0.1, 0.4), word('Second.', 0.5, 0.8)], true));
+  assert.equal(delivered.length, 1);
+  assert.equal(h.errors.length, 1);
   await h.close();
 });
 

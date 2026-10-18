@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="recorder-token" content="__TOKEN__">
+  <title>Asked &amp; Answered · Speech check</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Asked &amp; Answered / Local test</p>
+      <h1>Let’s check your microphone.</h1>
+      <p class="intro">Record a short conversation and check the transcript. You can talk with someone else or speak a few sentences yourself.</p>
+    </header>
+
+    <section class="card connection" aria-label="Service connection">
+      <p id="connection-status" role="status">Checking the local server…</p>
+      <button id="check-connection" class="quiet" type="button">Check connection</button>
+    </section>
+
+    <section class="card" aria-labelledby="recording-title">
+      <div class="section-heading"><h2 id="recording-title">Record a conversation</h2><span id="recording-state" class="badge">Microphone off</span></div>
+      <p>Start the microphone, speak naturally, then choose <strong>Stop &amp; test</strong>. No voice calibration is needed.</p>
+
+      <div id="capture-monitor" class="monitor" hidden>
+        <div class="level-heading"><label for="input-level">Microphone level</label><span id="level-label">Waiting for audio</span></div>
+        <meter id="input-level" min="-60" max="0" low="-45" high="-3" optimum="-18" value="-60">Microphone level</meter>
+        <p class="timer"><strong id="elapsed">0:00</strong> recorded <span>· 2:00 maximum</span></p>
+      </div>
+      <p id="recording-status" class="status" role="status" aria-live="polite">Start the microphone when you’re ready.</p>
+      <p id="error-message" class="notice error" role="alert" hidden></p>
+      <div class="actions">
+        <button id="start" type="button" disabled>Start microphone</button>
+        <button id="stop-test" type="button" hidden>Stop &amp; test with ElevenLabs</button>
+        <button id="retry" type="button" hidden>Retry test with this recording</button>
+        <button id="record-again" class="secondary" type="button" hidden>Record again</button>
+        <button id="cancel" class="quiet" type="button" hidden>Cancel</button>
+      </div>
+      <p class="privacy">Recording is local. Choosing a test button sends your conversation to <strong>ElevenLabs</strong>. Your recording and test results are saved locally.</p>
+    </section>
+
+    <section id="results" class="card" aria-labelledby="results-title" hidden>
+      <div class="section-heading"><h2 id="results-title">Your test results</h2><span id="test-state" class="badge">Preparing</span></div>
+      <label for="test-progress" id="progress-label">Test progress</label>
+      <progress id="test-progress" max="100" value="0">0%</progress>
+      <p id="test-status" role="status" aria-live="polite">Preparing your recording…</p>
+      <dl class="counts" aria-label="Test counts">
+        <div><dt>Utterances</dt><dd id="utterance-count">0</dd></div>
+        <div id="question-count-card" hidden><dt>Questions</dt><dd id="question-count">0</dd></div>
+        <div id="pair-count-card" hidden><dt>Q&amp;A pairs</dt><dd id="pair-count">0</dd></div>
+      </dl>
+      <h3>Transcript</h3>
+      <p id="transcript-empty" class="muted">Finished sentences will appear here during the test.</p>
+      <ol id="transcript" class="transcript"></ol>
+      <div id="pairs-section" hidden><h3>Captured Q&amp;A</h3><div id="pairs" class="pairs"></div></div>
+      <p id="latency" class="muted" hidden></p>
+      <p id="saved-path" class="saved" hidden></p>
+      <p class="scope">This laptop test checks transcription and does not assign speakers. The full server needs calibration with the glasses microphone to identify the wearer. The glasses display and repeated-question matcher are outside this test.</p>
+    </section>
+    <footer>Keep this window open while the test runs. Cancel stops the microphone or the current test.</footer>
+  </main>
+</body>
+</html>

@@ -12,7 +12,7 @@ const ERROR_TYPES = new Set([
   'chunk_size_exceeded', 'insufficient_audio_activity', 'throttled',
 ]);
 
-type TimedWord = { text: unknown; startMs: number; endMs: number };
+type TimedWord = { text: unknown; startMs: number; endMs: number; uncertain?: boolean };
 const sentenceSegmenter = new Intl.Segmenter('en', { granularity: 'sentence' });
 const NON_TERMINAL_ABBREVIATION = /(?:\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Mt|vs|e\.g|i\.e)\.|^(?:[A-Z]\.)+)$/iu;
 // Punctuation may exist only in the full transcript, rather than word tokens.
@@ -35,7 +35,8 @@ function splitSentences(text: string, words: TimedWord[], sentMs: number): Provi
   // optional word text is absent. Splitting requires complete text alignment.
   if (ranges.length === 1) return [{ text: text.trim(),
     startMs: Math.min(...words.map((word) => word.startMs)),
-    endMs: Math.min(sentMs, Math.max(...words.map((word) => word.endMs))), speaker: null }];
+    endMs: Math.min(sentMs, Math.max(...words.map((word) => word.endMs))), speaker: null,
+    ...(words.some(word => word.uncertain) ? { uncertain: true } : {}) }];
   if (!ranges.length) return null;
   const groups: TimedWord[][] = ranges.map(() => []);
   let cursor = 0;
@@ -60,9 +61,10 @@ function splitSentences(text: string, words: TimedWord[], sentMs: number): Provi
     if (!group.length) return null;
     const startMs = Math.min(...group.map((word) => word.startMs));
     const endMs = Math.min(sentMs, Math.max(...group.map((word) => word.endMs)));
-    if (endMs <= startMs || (result.length && startMs < result[result.length - 1]!.endMs)) return null;
+    if (endMs <= startMs) return null;
     const range = ranges[i]!;
-    result.push({ text: text.slice(range.start, range.end), startMs, endMs, speaker: null });
+    result.push({ text: text.slice(range.start, range.end), startMs, endMs, speaker: null,
+      ...(group.some(word => word.uncertain) ? { uncertain: true } : {}) });
   }
   return result;
 }
@@ -93,8 +95,9 @@ export type ElevenLabsTransport = {
  * multi-commit replay remains a required timing calibration check.
  * Multi-sentence commits are split using exact text/word alignment so each
  * sentence gets its own RMS range in the core. Timestamp output still cannot
- * separate multiple speakers inside one sentence, or identify overlapping
- * speakers. Those cases require real-microphone calibration/diarization.
+ * separate multiple speakers inside one sentence. Overlapping word timestamps
+ * flag an uncertain range, but overlap detection is not guaranteed. Unmarked
+ * cases still require real-microphone calibration/diarization.
  * close() cancels this connection, including any uncommitted tail/results.
  */
 export function createElevenLabsProvider(
@@ -131,7 +134,7 @@ export function createElevenLabsProvider(
     stopped = true;
     clearPending();
     // Do not expose provider payloads, URLs, headers, or underlying errors.
-    socket?.terminate();
+    try { socket?.terminate(); } catch { /* already disconnected */ }
     finishClose();
     options.onError(new Error(`ElevenLabs transcription ${message}`));
   }
@@ -142,19 +145,18 @@ export function createElevenLabsProvider(
         fail('connection is unavailable');
         return;
       }
-      if (socket.bufferedAmount > MAX_SOCKET_BUFFER_BYTES) {
+      const chunk = pending.subarray(0, CHUNK_BYTES);
+      const payload = JSON.stringify({
+        message_type: 'input_audio_chunk', audio_base_64: chunk.toString('base64'),
+        sample_rate: 16_000, commit: false,
+      });
+      if (socket.bufferedAmount + Buffer.byteLength(payload) > MAX_SOCKET_BUFFER_BYTES) {
         fail('connection is too slow');
         return;
       }
-      const chunk = pending.subarray(0, CHUNK_BYTES);
       pending = pending.subarray(CHUNK_BYTES);
       try {
-        socket.send(JSON.stringify({
-          message_type: 'input_audio_chunk',
-          audio_base_64: chunk.toString('base64'),
-          sample_rate: 16_000,
-          commit: false,
-        }), (error) => { if (error) fail('audio send failed'); });
+        socket.send(payload, (error) => { if (error) fail('audio send failed'); });
         sentBytes += chunk.length;
       } catch {
         fail('audio send failed');
@@ -220,6 +222,20 @@ export function createElevenLabsProvider(
       endMs = Math.max(endMs, word.end * 1_000);
       words.push({ text: word.text, startMs: word.start * 1_000, endMs: word.end * 1_000 });
     }
+    // Word intervals that overlap cannot supply a clean single-voice RMS
+    // range, even when punctuation combines them into one sentence. Retain
+    // recognized words but force downstream attribution to abstain.
+    let cluster: TimedWord[] = [];
+    let priorEnd = -Infinity;
+    const markCluster = () => {
+      if (cluster.length > 1) for (const word of cluster) word.uncertain = true;
+    };
+    for (const word of words) {
+      if (word.startMs >= priorEnd - 1 / 16) { markCluster(); cluster = []; }
+      cluster.push(word);
+      priorEnd = Math.max(priorEnd, word.endMs);
+    }
+    markCluster();
     // Never invent ranges or clamp provider drift into unrelated PCM. A single
     // sample's tolerance only accommodates floating-point serialization.
     const sentMs = sentBytes / BYTES_PER_MS;
@@ -267,14 +283,14 @@ export function createElevenLabsProvider(
         finishClose();
       } else {
         closeTimer = setTimeout(() => {
-          socket?.terminate();
+          try { socket?.terminate(); } catch { /* already disconnected */ }
           finishClose();
         }, transport.closeTimeoutMs ?? 1_000);
         try {
           if (socket.readyState === WebSocket.CONNECTING) socket.terminate();
           else socket.close(1000);
         } catch {
-          socket.terminate();
+          try { socket.terminate(); } catch { /* already disconnected */ }
           finishClose();
         }
       }

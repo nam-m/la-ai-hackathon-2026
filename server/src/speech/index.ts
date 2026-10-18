@@ -5,9 +5,9 @@ import { createElevenLabsProvider } from './elevenlabs.js';
 import { readFakeScript, type FakeLine } from './fake.js';
 import { isQuestion } from './questions.js';
 import { SpeechLatencyTracker, type LatencyMeasurement } from './latency.js';
-import type { ProviderFactory, ProviderUtterance, QAPair, SpeechModule, SpeechProvider, Utterance } from './types.js';
+import type { ProviderFactory, ProviderUtterance, QAPair, SpeakerRole, SpeechModule, SpeechProvider, Utterance } from './types.js';
 
-export type { Utterance, QAPair, SpeechModule } from './types.js';
+export type { Utterance, QAPair, SpeakerRole, SpeechModule } from './types.js';
 export { isQuestion } from './questions.js';
 export { SpeechLatencyTracker } from './latency.js';
 
@@ -19,6 +19,8 @@ export type SpeechOptions = {
   onPair(p: QAPair): void;
   onError(e: Error): void;
   wearerThresholdDb?: number;
+  /** Abstain within this many dB on either side of the calibrated threshold. */
+  wearerMarginDb?: number;
   /** Labels belong to the initial Deepgram connection only. Recalibrate after resume. */
   wearerSpeaker?: string;
   speakerNames?: Record<string, string>;
@@ -45,8 +47,9 @@ export function createSpeechModule(opts: SpeechOptions): ConfigurableSpeechModul
   if (opts.wearerThresholdDb !== undefined && (!Number.isFinite(opts.wearerThresholdDb) || opts.wearerThresholdDb < -120 || opts.wearerThresholdDb > 0)) {
     throw new Error('wearerThresholdDb must be a finite dBFS value between -120 and 0');
   }
+  const wearerMarginDb = opts.wearerMarginDb ?? 3;
+  if (!Number.isFinite(wearerMarginDb) || wearerMarginDb < 0) throw new Error('wearerMarginDb must be a finite nonnegative number');
   const now = opts.now ?? Date.now;
-  const sessionStart = now();
   const idPrefix = randomUUID();
   const latency = new SpeechLatencyTracker();
   let sequence = 0;
@@ -56,9 +59,14 @@ export function createSpeechModule(opts: SpeechOptions): ConfigurableSpeechModul
   let failed = false;
   let provider: SpeechProvider | undefined;
   let audio: AudioPipeline | undefined;
+  // Same source clock as C's PCM ring. Time advances only on accepted bytes,
+  // including skipped silence and bytes received while a provider has failed.
+  let sourceBytes = 0;
+  const arrivals: { startMs: number; endMs: number; wallEnd: number }[] = [];
+  let latestFinalEndMs = 0;
   let forwardedMs = 0;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
-  let pending: { question: Utterance; receivedAt: number } | undefined;
+  let pending: Utterance | undefined;
   let wearerSpeaker = opts.wearerSpeaker;
   let names = new Map(Object.entries(opts.speakerNames ?? {}));
   let setup: { isWearer: boolean; name?: string } | undefined;
@@ -92,55 +100,66 @@ export function createSpeechModule(opts: SpeechOptions): ConfigurableSpeechModul
     stopProvider();
     report(error);
   }
-  function emit(u: Utterance, identityKnown: boolean): void {
+  function emit(u: Utterance): void {
     if (closed || paused || failed) return;
     const current = generation;
     opts.onUtterance(u);
     if (closed || paused || failed || current !== generation) return;
-    if (u.isWearer && isQuestion(u.text)) {
-      pending = { question: u, receivedAt: now() };
-      const measurement = latency.markFinal(u.id, sessionStart + u.endMs, now());
-      opts.onWearerQuestion(u);
-      if (!closed && !paused && !failed && current === generation) opts.onLatency?.(measurement);
-    } else if (pending && !u.isWearer) {
-      const previous = pending;
-      // An unidentifiable turn or another question must not become an answer.
-      pending = undefined;
-      const gap = u.startMs - previous.question.endMs;
-      if (identityKnown && !isQuestion(u.text) && gap >= 0 && gap <= 30_000 && now() - previous.receivedAt <= 30_000) {
-        opts.onPair({ question: previous.question, answer: u });
+    if (u.role === 'wearer' && isQuestion(u.text)) {
+      pending = u;
+      // Source PCM time excludes wall-time pauses. Locate the original input
+      // chunk instead of treating the PCM offset as elapsed time since startup.
+      let arrival: typeof arrivals[number] | undefined;
+      for (let i = arrivals.length - 1; i >= 0; i--) {
+        const frame = arrivals[i]!;
+        if (u.endMs > frame.startMs && u.endMs <= frame.endMs + 1e-6) { arrival = frame; break; }
       }
+      const speechEndAt = opts.provider === 'fake' ? now() : arrival ? arrival.wallEnd - (arrival.endMs - u.endMs) : undefined;
+      const measurement = speechEndAt === undefined ? undefined : latency.markFinal(u.id, speechEndAt, now());
+      opts.onWearerQuestion(u);
+      if (measurement && !closed && !paused && !failed && current === generation) opts.onLatency?.(measurement);
+    } else if (pending && u.role === 'other') {
+      const gap = u.startMs - pending.endMs;
+      // Every other-person line, including a clarification question, is a
+      // candidate. C verifies actual replies; rejection keeps this window open.
+      if (gap >= 0 && gap <= 30_000) opts.onPair({ question: pending, answer: u });
+      else if (gap > 30_000) pending = undefined;
     }
   }
   function receive(raw: ProviderUtterance): void {
     if (!raw.text.trim() || !Number.isFinite(raw.startMs) || !Number.isFinite(raw.endMs) || raw.startMs < 0 || raw.endMs <= raw.startMs) return;
     const fingerprint = `${raw.startMs}:${raw.endMs}:${raw.speaker}:${raw.text}`;
     if (seen.has(fingerprint)) return;
-    seen.add(fingerprint);
-    if (seen.size > 1000) seen.delete(seen.values().next().value!);
     const range = audio?.mapRange(raw.startMs, raw.endMs);
     if (!range) return;
-    let identityKnown = false;
-    let isWearer = false;
-    if (opts.provider === 'deepgram' && raw.speaker !== null && wearerSpeaker !== undefined) {
-      identityKnown = true;
-      isWearer = raw.speaker === wearerSpeaker;
-    } else if (opts.wearerThresholdDb !== undefined) {
-      identityKnown = true;
-      isWearer = range.rmsDb >= opts.wearerThresholdDb;
+    seen.add(fingerprint);
+    if (seen.size > 1000) seen.delete(seen.values().next().value!);
+    // Providers normally emit in spoken order. An overlapping or stale final
+    // remains visible, but must not replace the latest question or reorder
+    // answer candidates that C has already begun checking.
+    const outOfOrder = range.startMs < latestFinalEndMs;
+    latestFinalEndMs = Math.max(latestFinalEndMs, range.endMs);
+    let role: SpeakerRole = 'unknown';
+    if (!raw.uncertain && !outOfOrder && range.rmsDb > (opts.silenceThresholdDb ?? -50)) {
+      if (opts.provider === 'deepgram' && raw.speaker !== null && wearerSpeaker !== undefined) {
+        role = raw.speaker === wearerSpeaker ? 'wearer' : 'other';
+      } else if (opts.wearerThresholdDb !== undefined) {
+        if (range.rmsDb >= opts.wearerThresholdDb + wearerMarginDb) role = 'wearer';
+        else if (range.rmsDb <= opts.wearerThresholdDb - wearerMarginDb) role = 'other';
+      }
     }
     const u: Utterance = { ...range, id: `${idPrefix}:${++sequence}`, text: raw.text, speaker: raw.speaker,
-      name: raw.speaker === null ? null : (names.get(raw.speaker) ?? null), isWearer };
+      name: role === 'unknown' || raw.speaker === null ? null : (names.get(raw.speaker) ?? null), role, isWearer: role === 'wearer' };
     if (setup && opts.provider === 'deepgram') {
       pending = undefined;
-      if (raw.speaker === null) return;
+      if (raw.speaker === null || raw.uncertain || outOfOrder || range.rmsDb <= (opts.silenceThresholdDb ?? -50)) return;
       if (setup.isWearer) wearerSpeaker = raw.speaker;
       else if (wearerSpeaker === raw.speaker) { report(new Error('Setup speaker matches the wearer; retry in a quiet room')); return; }
       if (setup.name) names.set(raw.speaker, setup.name);
       setup = undefined;
       return;
     }
-    emit(u, identityKnown);
+    emit(u);
   }
   function connectProvider(): void {
     const current = ++generation;
@@ -155,12 +174,14 @@ export function createSpeechModule(opts: SpeechOptions): ConfigurableSpeechModul
   }
   function startLive(): void {
     forwardedMs = 0;
-    audio = new AudioPipeline({ startMs: Math.max(0, now() - sessionStart), silenceThresholdDb: opts.silenceThresholdDb,
+    const pipeline = new AudioPipeline({ startMs: sourceBytes / 32, silenceThresholdDb: opts.silenceThresholdDb,
       hangoverMs: opts.hangoverMs, onFrame(frame) {
-        if (closed || paused || failed) return;
+        if (audio !== pipeline || closed || paused || failed) return;
         if (!provider) connectProvider();
         if (closed || paused || failed || !provider) return;
+        const connection = generation;
         provider.sendAudio(frame);
+        if (audio !== pipeline || generation !== connection || closed || paused || failed) return;
         forwardedMs += frame.byteLength / 32;
         if (opts.provider === 'elevenlabs' && !failed) {
           clearTimeout(idleTimer);
@@ -170,6 +191,7 @@ export function createSpeechModule(opts: SpeechOptions): ConfigurableSpeechModul
           idleTimer.unref();
         }
       } });
+    audio = pipeline;
     if (opts.provider === 'deepgram') connectProvider();
   }
   function scheduleFake(): void {
@@ -179,19 +201,28 @@ export function createSpeechModule(opts: SpeechOptions): ConfigurableSpeechModul
     fakeTimer = setTimeout(() => {
       if (closed || paused) return;
       fakeIndex++;
-      const endMs = Math.max(0, now() - sessionStart);
-      emit({ ...next, id: `${idPrefix}:${++sequence}`, startMs: Math.max(0, endMs - (next.endMs - next.startMs)), endMs,
-        rmsDb: next.isWearer ? -18 : -36, speaker: next.isWearer ? 'wearer' : 'other' }, true);
+      const role = next.role ?? (next.isWearer ? 'wearer' : 'other');
+      emit({ ...next, id: `${idPrefix}:${++sequence}`, role, isWearer: role === 'wearer',
+        rmsDb: role === 'wearer' ? -18 : role === 'other' ? -36 : -120,
+        speaker: role === 'unknown' ? null : role, name: role === 'unknown' ? null : next.name });
       scheduleFake();
     }, Math.max(0, next.endMs - elapsed));
   }
   if (opts.provider === 'fake') scheduleFake(); else startLive();
   return {
     pushAudio(pcm) {
-      if (closed || paused || failed || opts.provider === 'fake') return;
+      if (closed || opts.provider === 'fake') return;
       if (!(pcm instanceof Uint8Array)) { fail(new Error('Audio must be raw PCM bytes in a Uint8Array')); return; }
+      const startMs = sourceBytes / 32;
+      sourceBytes += pcm.byteLength;
+      if (pcm.byteLength) {
+        arrivals.push({ startMs, endMs: sourceBytes / 32, wallEnd: now() });
+        const cutoff = sourceBytes / 32 - 120_000;
+        while (arrivals.length && (arrivals[0]!.endMs <= cutoff || arrivals.length > 4096)) arrivals.shift();
+      }
       // Limit an individual frame to avoid unbounded allocations from a broken client.
       if (pcm.byteLength > 320_000) { fail(new Error('Audio frame exceeds 10 seconds; send smaller PCM chunks')); return; }
+      if (paused || failed) return;
       audio?.push(pcm);
     },
     pause() {

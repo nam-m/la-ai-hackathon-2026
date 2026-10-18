@@ -1,3 +1,5 @@
+export type SpeakerRole = 'wearer' | 'other' | 'unknown';
+
 export type Utterance = {
   id: string;
   text: string;
@@ -6,6 +8,8 @@ export type Utterance = {
   rmsDb: number;
   speaker: string | null;
   name: string | null;
+  role: SpeakerRole;
+  /** Compatibility field; always exactly role === 'wearer'. */
   isWearer: boolean;
 };
 
@@ -24,6 +28,8 @@ export type ProviderUtterance = {
   startMs: number;
   endMs: number;
   speaker: string | null;
+  /** Provider detected overlap or speaker metadata that cannot be attributed safely. */
+  uncertain?: boolean;
 };
 
 export interface SpeechProvider {

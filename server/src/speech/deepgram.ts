@@ -31,6 +31,9 @@ const object = (value: unknown): value is JsonObject =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const seconds = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
+const SAMPLE_MS = 1 / 16;
+const SENTENCE_END = /[.!?]["'\u201d\u2019)\]}\u00bb]*$/u;
+const ABBREVIATION = /(?:\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Mt|vs|e\.g|i\.e)\.|^(?:[A-Z]\.)+)$/iu;
 
 /**
  * Nova-3, raw signed little-endian 16-bit PCM / 16 kHz / mono.
@@ -58,6 +61,8 @@ export function createDeepgramProvider(options: DeepgramOptions): SpeechProvider
   let sentBytes = 0;
   let pending: Token[] = [];
   let acceptedEndMs = -1;
+  let emittedEndMs = -1;
+  const seenWords = new Set<string>();
   let closePromise: Promise<void> | undefined;
   let resolveClose: (() => void) | undefined;
 
@@ -71,6 +76,7 @@ export function createDeepgramProvider(options: DeepgramOptions): SpeechProvider
     queue = [];
     queuedBytes = 0;
     pending = [];
+    seenWords.clear();
   }
 
   // Deliberately do not forward provider text, exception messages, headers, or
@@ -108,32 +114,77 @@ export function createDeepgramProvider(options: DeepgramOptions): SpeechProvider
   }
 
   function flush(throughMs = Infinity): void {
-    const ready = pending.filter(word => word.endMs <= throughMs + 0.01);
-    pending = pending.filter(word => word.endMs > throughMs + 0.01);
-    let turn: ProviderUtterance | undefined;
-    for (const word of ready) {
-      if (turn && turn.speaker === word.speaker) {
-        turn.text += ` ${word.text}`;
-        turn.endMs = word.endMs;
-      } else {
-        if (turn) options.onUtterance(turn);
-        turn = { ...word };
-      }
-      // A single speaker can ask a question and continue with another sentence
-      // before endpointing fires. Preserve each sentence's own word timestamps
-      // so downstream pairing sees the next sentence as a distinct utterance.
-      if (/[.!?]["'\u201d\u2019)\]}\u00bb]*$/u.test(word.text)) {
-        options.onUtterance(turn);
-        turn = undefined;
-      }
+    const terminal = () => state === 'failed' || state === 'closed';
+    // Overlapping timestamps are evidence that a single RMS range cannot
+    // safely identify the voice. Mark the whole connected overlap, including
+    // intervals nested inside an earlier word rather than dropping that word.
+    let cluster: Token[] = [];
+    let clusterEnd = -1;
+    const finishCluster = () => {
+      if (cluster.length > 1) for (const word of cluster) word.uncertain = true;
+    };
+    for (const word of [...pending].sort((a, b) => a.startMs - b.startMs)) {
+      if (word.startMs >= clusterEnd - SAMPLE_MS) { finishCluster(); cluster = []; }
+      cluster.push(word);
+      clusterEnd = Math.max(clusterEnd, word.endMs);
     }
-    if (turn) options.onUtterance(turn);
+    finishCluster();
+    const firstLater = pending.findIndex(word => word.endMs > throughMs + 0.01);
+    const count = firstLater < 0 ? pending.length : firstLater;
+    // A delayed boundary inside an overlap must not pull a short later word
+    // ahead of an earlier word whose timestamp still extends past the cutoff.
+    const ready = pending.slice(0, count);
+    pending = pending.slice(count);
+    let sentence: Token[] = [];
+    function emitSentence(): boolean {
+      const uncertain = sentence.some(word => word.uncertain) || new Set(sentence.map(word => word.speaker)).size > 1;
+      let turn: ProviderUtterance | undefined;
+      const emitTurn = (): boolean => {
+        if (!turn) return true;
+        if (terminal()) return false;
+        emittedEndMs = Math.max(emittedEndMs, turn.endMs);
+        options.onUtterance(turn);
+        return !terminal();
+      };
+      for (const word of sentence) {
+        if (turn && turn.speaker === word.speaker) {
+          turn.text += ` ${word.text}`;
+          turn.endMs = Math.max(turn.endMs, word.endMs);
+        } else {
+          if (!emitTurn()) return false;
+          turn = { ...word, ...(uncertain ? { uncertain: true } : {}) };
+        }
+      }
+      sentence = [];
+      return emitTurn();
+    }
+    for (let index = 0; index < ready.length; index++) {
+      const word = ready[index]!;
+      sentence.push(word);
+      const next = ready[index + 1];
+      const abbreviation = next?.speaker === word.speaker && ABBREVIATION.test(word.text);
+      if (SENTENCE_END.test(word.text) && !abbreviation && !emitSentence()) return;
+    }
+    if (sentence.length) emitSentence();
+  }
+
+  function remember(word: Token): boolean {
+    const key = `${word.startMs}:${word.endMs}:${word.speaker}`;
+    if (seenWords.has(key) || word.endMs < acceptedEndMs - 120_000) return false;
+    seenWords.add(key);
+    if (seenWords.size > 20_000) seenWords.delete(seenWords.values().next().value!);
+    // A late overlapping final cannot be confidently classified using either
+    // a diarization label or an RMS range already attributed to another turn.
+    if (word.startMs < emittedEndMs - SAMPLE_MS) word.uncertain = true;
+    return true;
   }
 
   function parseFinal(message: JsonObject): { tokens: Token[]; endMs: number } | null {
     if (!object(message.channel) || !Array.isArray(message.channel.alternatives)) return null;
     const alternative: unknown = message.channel.alternatives[0];
     if (!object(alternative) || typeof alternative.transcript !== 'string') return null;
+    if ((message.start !== undefined && !seconds(message.start)) ||
+      (message.duration !== undefined && !seconds(message.duration))) return null;
     const hasRange = seconds(message.start) && seconds(message.duration);
     const rangeStart = hasRange ? (message.start as number) * 1000 : undefined;
     const rangeEnd = hasRange ? rangeStart! + (message.duration as number) * 1000 : undefined;
@@ -147,23 +198,28 @@ export function createDeepgramProvider(options: DeepgramOptions): SpeechProvider
         if (!text) return null;
         const previous = tokens.at(-1);
         if (previous && word.start * 1000 < previous.startMs) return null;
+        const speaker = typeof word.speaker === 'number' && Number.isSafeInteger(word.speaker) && word.speaker >= 0
+          ? String(word.speaker) : null;
         tokens.push({
           text,
           startMs: word.start * 1000,
           endMs: word.end * 1000,
-          speaker: typeof word.speaker === 'number' && Number.isSafeInteger(word.speaker) && word.speaker >= 0
-            ? String(word.speaker) : null,
+          speaker,
+          ...(speaker === null ? { uncertain: true } : {}),
         });
       }
     } else if (alternative.transcript.trim()) {
       if (rangeStart === undefined || rangeEnd === undefined || rangeEnd <= rangeStart) return null;
       // No word diarization means unknown identity, even if another segment had a label.
-      tokens.push({ text: alternative.transcript.trim(), startMs: rangeStart, endMs: rangeEnd, speaker: null });
+      tokens.push({ text: alternative.transcript.trim(), startMs: rangeStart, endMs: rangeEnd, speaker: null, uncertain: true });
     }
-    const endMs = rangeEnd ?? tokens.at(-1)?.endMs;
-    if (endMs === undefined || !Number.isFinite(endMs) || endMs > sentBytes / 32 + 1) return null;
-    if (tokens.some(word => word.endMs > sentBytes / 32 + 1)) return null;
-    return { tokens, endMs };
+    const maxWordEnd = tokens.reduce((end, word) => Math.max(end, word.endMs), -Infinity);
+    const endMs = rangeEnd ?? (tokens.length ? maxWordEnd : undefined);
+    const sentMs = sentBytes / 32;
+    if (endMs === undefined || !Number.isFinite(endMs) || endMs > sentMs + SAMPLE_MS) return null;
+    if (tokens.some(word => word.startMs >= sentMs || word.endMs > Math.min(endMs, sentMs) + SAMPLE_MS)) return null;
+    for (const word of tokens) word.endMs = Math.min(word.endMs, sentMs);
+    return { tokens, endMs: Math.min(Math.max(endMs, maxWordEnd), sentMs) };
   }
 
   function onMessage(data: unknown, isBinary?: boolean): void {
@@ -188,9 +244,9 @@ export function createDeepgramProvider(options: DeepgramOptions): SpeechProvider
     if (Array.isArray(message.channel_index) && message.channel_index[0] !== 0) return;
     const final = parseFinal(message);
     if (!final) { fail('Deepgram returned a malformed final transcript'); return; }
-    // Final Results are chronological, non-overlapping audio ranges. The high
-    // water mark also suppresses replayed finals after their buffer was emitted.
-    const fresh = final.tokens.filter(word => word.endMs > acceptedEndMs + 0.01);
+    // Exact timing/label deduplication preserves genuinely overlapping words;
+    // an end-time high-water filter would silently discard nested intervals.
+    const fresh = final.tokens.filter(remember);
     pending.push(...fresh);
     if (fresh.length) acceptedEndMs = Math.max(acceptedEndMs, ...fresh.map(word => word.endMs));
     if (pending.length > 10_000 || (pending.length && pending.at(-1)!.endMs - pending[0]!.startMs > 120_000)) {
