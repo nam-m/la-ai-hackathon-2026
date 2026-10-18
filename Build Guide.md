@@ -286,7 +286,7 @@ You build everything in Creao: the family dashboard, the agents, and the plumbin
 
 ## Together at the end
 
-Feature freeze is **Sun 11 AM** (moved from 9:30 AM; the steps after it have no fixed times, we do them as we go). From then until noon, all four of you do the product work. A also packages the Beta first.
+There is no feature freeze (removed Sun 10:48 AM) and the steps have no fixed times; we do them as we go. Until noon, all four of you do the product work. A also packages the Beta first.
 
 1. **Bug bash.** Everyone runs the full demo on the real G2; fix only what breaks the demo.
 2. **Pitch (all).** A named user ("Rose, 78, early-stage Alzheimer's, lives with her daughter Sarah"), the problem in two sentences, a one-line pitch.
