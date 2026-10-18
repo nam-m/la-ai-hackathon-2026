@@ -1,143 +1,203 @@
 # Asked & Answered / Rewind — MVP implementation spec
 
-Version 3.0 · 17 October 2026 · Concise edition
+Version 4.1 · 17 October 2026 · Hackathon edition (corrects v3.0; tone uses emotion2vec+)
 
 ## 1. Scope
 
-Implement every product feature in the repository's Markdown plans, plus voice-based emotion estimation. **Even Realities G2 supplies audio; ElevenLabs Scribe supplies live transcription.** Patterns and reminders are required, including features previously marked “should have” or “stretch.” The nine additional dementia-support modules are specified in `FULL_PRODUCT_SPEC.md`.
+Build what can be demoed on a real Even G2 by **feature freeze, Sunday 9:30 AM**. Submissions close at noon.
 
-Inspect the current checkout and `AGENTS.md`, preserve working code, and track requirements against implementation and tests. Report missing credentials or hardware verification explicitly; mocks do not count as live integration.
+The product: G2 glasses quietly answer the questions a person with early dementia keeps repeating, using answers their family already gave. The family sees what happened through a Creao dashboard, including the estimated tone of the wearer's voice.
 
-Baseline: [nam-m/la-ai-hackathon-2026](https://github.com/nam-m/la-ai-hackathon-2026). Read `Build Guide.md`, `LA Hacks Team Plan.md`, `folder-structure.md`, `README.md`, `Part 4 - Pipeline Plan.md` and `glasses-app/README.md`, plus any new Markdown requirements. Inspected branch commits:
+**In scope (must work in the demo)**
 
-| Branch | Commit prefix |
-|---|---|
-| main | `19b94c84c9a1` |
-| glasses-app | `5018c6a4c572` |
-| part4-pipeline-plan | `a73f18744c89` |
-| feat/creao-00-plan | `b37bf8bca0ce` |
-| feat/creao-01-contracts | `764c5fc72182` |
+1. G2 audio → live transcription → question and answer capture → repeat matching with a yes/no check → one sourced line on the glasses.
+2. Family facts, today's plan and visitors entered in the Creao dashboard and used as fallback answers.
+3. Voice tone: estimated tone of each wearer question, using the open-source emotion2vec+ model in our own Python tone service.
+4. Creao agents: log, daily summary and patterns, built from the transcript **and** tone estimates.
+5. Pause, gestures, system exit and recovery after a five-minute phone lock.
 
-Resolve conflicts using current user instructions, this spec and verified platform behavior. Preserve the existing provider seams and development tools.
+**Stretch, in this order, only if 1–5 work on hardware:** wearing and battery alert → reminders (simple version) → patterns over seeded history.
 
-## 2. Required features
+**Out of scope for the hackathon:** see section 10. These go in the Devpost as future work.
 
-| Area | Requirements |
-|---|---|
-| Glasses and phone | G2 pairing, mic permission/capture, quiet display, phone mirror/status, pause/resume, recall, offline recovery and system exit |
-| Speech | ElevenLabs realtime transcription; wearer/other/unknown attribution; calibrated device hints; timestamped utterances |
-| Memory | Question detection, answer capture within 30 seconds, durable records, embeddings and semantic verification, exact sourced recall |
-| Family input | Facts create/edit/delete, standing facts, expiry, daily plans and visitors, immediate synchronization |
-| CREAO | Three runtime agents: log/summary, patterns and reminder preparation; five-minute logs, daily summary and nightly patterns |
-| Reminders | Family-entered schedules, reliable timed delivery, cancellation, quiet hours and missed/expired states |
-| Dashboard | Today, Facts, Conversation log, Summary, Patterns, Reminders, Voice cues and Settings; loading/empty/stale/error states |
-| Voice cues | Actual acoustic analysis, wearer attribution, uncertainty, timeline, correction and disable controls |
-| Delivery | Authentication, consent, retention/deletion, observability, mock/replay tools, packaging, real-device tests and demo runbook |
+Each person reads the build guide for their part; this spec changes it where noted.
 
-## 3. Architecture and contracts
+## 2. Corrections from v3.0
 
-Use the existing TypeScript client, Node/Express/WebSocket server, SQLite with migrations/WAL on persistent storage, and CREAO dashboard/runtime integrations. Separate audio consumers so emotion or background-job failures cannot delay Q&A.
+| v3.0 said | Problem | v4.0 |
+| --- | --- | --- |
+| ElevenLabs required, loudness insufficient | ElevenLabs realtime has no speaker labels, so with no loudness there is no way to find the wearer | ElevenLabs Realtime with calibrated loudness, abstain when unsure. Deepgram with speaker labels stays a switchable fallback |
+| Device `speakerRole`/direction hints | Not in the Even SDK docs: audio events carry only the PCM and the source (glasses or phone) | Removed. Ask the Even table about mic-array features; don't depend on them |
+| Everything required, including stretch | Weeks of work | Must-haves and stretch separated; production items moved to future work |
+| Two-day patterns working unattended | Only one day of data exists | Patterns run on seeded history plus today, clearly labeled as demo data |
+| Emotion "optional" with an open-ended provider search | Unscoped; Hume needs an approval form | emotion2vec+ (open source) in a Python tone service, wearer questions only, family dashboard only |
+| Nine extra modules in another spec | A second project | Future work |
+| v2 binary audio protocol | Changes both ends during the hackathon | Keep contract 1 (v1). Raw PCM frames as today |
+| SQLite migrations, socket tickets, household auth, CSRF, idempotency, SSE | Production hardening | JSON store and shared secrets. Future work |
+
+## 3. Architecture
 
 ```mermaid
 flowchart TD
-  G["G2 via Even Hub"] --> I["Authenticated audio ingress"]
-  I --> S["ElevenLabs transcription"]
-  I --> E["Acoustic analysis"]
-  S --> Q["Attribution and Q&A"]
-  Q --> G
-  Q --> D["Database and durable jobs"]
-  E --> D
-  D --> C["CREAO agents"]
-  C --> D
-  D --> F["Family dashboard"]
+  G["G2 glasses: mic + display"] --> P["Phone app (Even Hub)"]
+  P -->|"PCM over /ws"| S["Our server"]
+  S --> T["ElevenLabs realtime transcription"]
+  T --> Q["Q&A capture and repeat matching"]
+  Q -->|"one line"| P
+  S --> H["Tone service: emotion2vec+, wearer questions only"]
+  H --> DB["Store: Q&A, facts, transcript, tone"]
+  Q --> DB
+  DB --> C["Creao agents: log, summary, patterns"]
+  C --> F["Family dashboard in Creao"]
+  F -->|"facts, plans, visitors"| DB
 ```
 
-Keep server-side provider keys. Use short-lived socket tickets and household/person authorization. Validate full nested payloads; TypeScript casts are not runtime validation.
+Rules that hold everywhere:
 
-Retain v1 hello/control/ping, raw PCM and answer/clear/status/pong/error compatibility. For metadata-preserving v2, negotiate version once, return `ready`, and send PCM with stream ID, sequence, source sample offset, count, role hint and playback flag. Define the shared binary schema before changing either endpoint; reject malformed, duplicate or backward frames. Never infer capture time from network arrival.
+- **The live path never waits on the tone service or Creao.** If either is slow or down, answers still reach the glasses.
+- **Answers are verbatim.** The matcher and verifier only choose or reject an existing answer. No model writes what the wearer sees.
+- **Keys stay on the server.** The phone app holds only the app token.
 
-Audio: signed 16-bit little-endian, 16 kHz mono; approximately 100 ms packets. Bound each live queue to two seconds. Record gaps and restart delayed consumers rather than replaying stale audio. Preserve silence needed for provider VAD. Map provider timestamps back to source samples; uncertain alignment prevents confident attribution.
+## 4. Glasses and phone (A)
 
-## 4. Glasses and transcription
+- Create the G2 startup page before starting the glasses mic. Forward PCM chunks to `/ws` (contract 1).
+- Display is blank by default. One line: *answer, speaker, time*, or *answer (told you at time)* without a name. Clear after 8 seconds or on `clear`.
+- **Never cut off a negation or instruction when shortening.** If an answer doesn't fit, show the first sentence only if it keeps its meaning; otherwise show "See phone" and the full text on the phone.
+- Gestures: tap dismisses, **swipe up recalls the last answer**, long press pauses or resumes, **double tap on the root page is system exit** (Even requirement).
+- Pause stops forwarding immediately and stops the mic. Recovery after reconnect never undoes a deliberate pause.
+- Reconnect with 1, 2, 4, then 10 second backoff; ping every 15 seconds.
+- Verify manifest permissions, network whitelist, CORS, `.ehpk` packaging, and the installed Beta after a five-minute phone lock.
 
-Create the G2 page before starting its microphone. Pause/exit disables forwarding immediately, closes provider streams and requests microphone shutdown. Handle a late mic-start result by shutting it down again. Recovery never overrides a deliberate pause.
+## 5. Speech (B)
 
-Preserve current gestures: tap dismiss/retry mic, swipe up recall, long press pause/resume, double tap system exit. Blank display by default; clear an answer after eight seconds. Show source/time and use a reviewed short answer or companion fallback when content does not fit. Never truncate a negation or instruction. Handle unsupported glyphs explicitly.
+- **ElevenLabs Scribe v2 Realtime** for live transcription, chosen by the loudness test. Only final (committed) text goes to matching.
+- **Wearer attribution:** RMS loudness per utterance against a threshold calibrated on the real G2 with the wearer and a companion. Result is `wearer`, `other` or `unknown`. Unknown or overlapping speech is never treated as a question or an answer.
+- Each utterance carries: ID, text, start and end in milliseconds from session start, RMS, role, and the name if known.
+- Keep the `fake` provider for testing and Deepgram as a switchable fallback (`SPEECH_PROVIDER`).
+- Keep a rolling audio buffer of the last 60 seconds so the tone module can cut out a wearer question's audio by its start and end times.
 
-Use `scribe_v2_realtime`; only committed text enters matching. Keep exact transcript text. Deduplicate later timestamp enrichment. Normalize utterances with IDs, person/session/stream scope, text, source sample ranges, timing quality, role/method, optional speaker identity and overlap status.
+## 6. Memory and matching (C)
 
-Device `speakerRole`/direction are hints, not verified identities. Evaluate wearer and companion turns on actual G2 hardware; loudness alone is insufficient. Unknown/overlapping turns abstain or use an explicitly selected wearer-controlled mode. Preserve fake and operator-selected Deepgram adapters, but demonstrate ElevenLabs for live acceptance.
+1. A final wearer question is matched immediately against today's records and family facts.
+2. Matching: embeddings and cosine similarity, a strict threshold tuned on the 20 match and 10 non-match fixtures (zero wrong matches first), then a yes/no check by a fast model. Any error or timeout returns nothing.
+3. Choose the newest spoken answer, then family facts. If two eligible answers contradict each other, show nothing.
+4. Answer window: the next `other` utterance within 30 seconds becomes the answer. Overlapping or unknown speech is rejected.
+5. Spoken records expire at local midnight. Family facts can carry an expiry time; standing facts don't expire. Deleting or editing a fact takes effect on the next question.
+6. Count each repeat as an event, separately from the stored answer, so summaries can say "asked 4 times".
 
-Retain debug recording/WAV replay, mock server, seed facts and simulator tools; disable recording/debug routes in production. Verify manifest, whitelist, CORS, `.ehpk` packaging and installed Beta behavior after five minutes of phone lock. Reconnect with 1/2/4/10-second backoff and preserve the existing heartbeat.
+## 7. Voice tone (C builds, D shows)
 
-## 5. Memory and reminders
+Name in the product: **"Estimated tone of voice."** It is never presented as a diagnosis.
 
-1. Detect a committed wearer question and immediately search eligible records.
-2. Open a 30-second answer window. Accept only an attributable, relevant other-speaker response; reject overlap, unrelated replies and ambiguity.
-3. Automatically retain consented low-risk exchanges as observed speech. Send ambiguous/sensitive candidates for review. Keep family-confirmed facts distinguishable.
-4. Filter by household/person, permission, validity and supersession before embedding retrieval. A structured verifier accepts/rejects candidates; it cannot rewrite answers.
-5. Return one verbatim answer per question with source/time. Recheck expiry/version at delivery. Respect explicit supersession; otherwise use the newest eligible spoken answer, then family facts. Abstain on unresolved contradictions.
-6. Expire ordinary spoken records at local midnight or an earlier explicit time. Standing facts have review dates. Deletion/update invalidates retrieval and recall immediately.
+**Model:** [emotion2vec+](https://huggingface.co/emotion2vec/emotion2vec_plus_base) (open source, no approval needed), run in `tone-service/` (Python, FastAPI, FunASR). Base size on a CPU; large only with a GPU. Labels: angry, disgusted, fearful, happy, neutral, other, sad, surprised. This also qualifies for veri.studio's "Best use of an Open-sourced model."
 
-Count repeat question events separately from stored answers. Medication reminders may repeat exact family-entered schedules; never infer ingestion or generate dosing advice.
+**Pipeline**
 
-Reminder states: draft, scheduled, due, sent, acknowledged, cancelled, expired or failed. Acknowledgment is a display interaction, not task completion. Persist occurrence IDs, UTC instants and IANA zones; resolve DST ambiguity explicitly. Default delivery window: five minutes, then mark missed. Pause/quiet hours suppress delivery; reconnect never releases a stale backlog.
+1. The server keeps the last 60 seconds of PCM per session. When a wearer question is final, it cuts the question's audio by the utterance's start and end times (milliseconds since the session's first audio byte).
+2. Skip it if the clip is under 1 second or near-silent (below −45 dBFS). Trim to 8 seconds.
+3. Wrap as 16 kHz mono WAV and `POST` it to the tone service's `/tone` with the `X-Tone-Secret` header.
+4. Store all label scores, the top three, and **worry = fearful + sad** (0 to 1), linked to the question event.
+5. Runs in parallel with matching. A tone failure stores a `failed` record and never delays the answer.
 
-## 6. Voice-emotion estimation
+**Tone record**
 
-Call the feature **Voice cues: estimated expression in the wearer’s voice**. It is optional and must analyze original audio. Text sentiment, loudness rules and random labels do not satisfy acceptance.
+```json
+{"id":"tone_42","questionEventId":"qe_17","at":"2026-10-18T14:05:11-07:00","provider":"emotion2vec/emotion2vec_plus_base","scores":{"fearful":0.48,"sad":0.14,"neutral":0.22},"top":["fearful","neutral","sad"],"worry":0.62,"quality":"ok"}
+```
 
-**ElevenLabs-first check:** Expressive Mode uses acoustic cues, but the reviewed documentation does not establish an exposed standalone live emotion-score API. Its sentiment analysis uses completed transcripts. Verify an accessible structured acoustic event, timing, speaker attribution and score meaning before selecting it for dashboard tracking. Agent-generated interpretations are not calibrated measurements.
+`quality` is `ok`, `too_short`, `too_quiet` or `failed`. Empty or uncertain results are valid.
 
-If unavailable, use a documented acoustic provider such as Hume through an `EmotionProvider` adapter. Keep ElevenLabs transcription. Missing provider access is a reported integration blocker, not permission to substitute transcript sentiment.
+**Rules**
 
-Store provider/model, measurement ID, source ranges, allowed expressions/attributes, score semantics, quality/status and observation time. Apply consent, attribution, overlap, clipping/noise and minimum-speech checks before labeling. Initial hypotheses: ≥1.5 seconds wearer speech, ≥95% wearer coverage and no overlap; validate these rather than presenting them as clinical thresholds.
+- Wearer's own questions only. Other people's voices are never analyzed.
+- Shown on the family dashboard only, never on the glasses. It never changes an answer.
+- An on/off setting (`POST /settings`); when off, nothing is sent to the tone service.
+- **Trends, not absolute scores.** The model is trained largely on acted speech, so compare each question with the wearer's own earlier ones ("more worried than this morning").
+- Hosting: on the same machine as the server, on a laptop through a tunnel (ngrok or Cloudflare), or on a Vultr instance. Free tiers with 512 MB of memory are too small.
+- Before the demo: record the same question calmly and worriedly on the real G2 and check that worry differs. Keep those clips as backup.
 
-Allow interest, amusement, joy, frustration, sadness and concern; calm may be a separate voice attribute. Preserve provider score meaning, evaluate labels independently and avoid a forced single winning emotion. Empty/uncertain results are valid. Overlapping windows are not independent evidence. Mark live cues stale after 30 seconds without eligible speech.
+## 8. Creao and the family dashboard (D)
 
-Show cues only on authorized companion/dashboard views, with corrections and disable controls. Separate self-report from model estimates. Do not alter factual answers, treatment or medication schedules, or send external alerts based solely on voice cues.
+**What the family does and sees**
 
-## 7. CREAO, storage and APIs
+| The family enters (stored word for word, never rewritten by AI) | The family sees (generated by Creao agents) |
+| --- | --- |
+| Facts: question, answer, who said it, optional expiry, standing or not | Today's conversation log, labeled wearer or other |
+| Today's plan and visitors | Repeated questions with counts and tone trend |
+| Tone analysis on or off | Daily summary |
+| | Patterns across days |
 
-The server owns five-minute log jobs, the default 20:00 local summary, nightly patterns and reminder timing. CREAO prepares structured results asynchronously. Preserve upload/clip support; use sourced ElevenLabs transcripts when audio input is unsupported. Verify actual account capabilities, limits and model configuration.
+Family-entered facts go to the server through `POST /facts` exactly as typed. Creao's AI only produces the log, summaries and patterns; it never writes an answer the glasses will show.
 
-Persist a submission intent before calling CREAO, bind its returned run ID afterward and reconcile early callbacks. Authenticate callbacks or retrieve results through the authenticated API. Durably store delivery IDs before acknowledging; deduplicate results, validate complete schemas and reconcile ambiguous timeouts before retrying. Patterns include sources and recording coverage; insufficient data produces no invented trend. Unknown speakers remain unnamed.
+**Agents** (the server triggers them; results come back by webhook)
 
-Persist sessions, utterances, Q&A/facts/embeddings, occurrence events, plans/visits, reminders/deliveries, logs/summaries/patterns, acoustic observations/feedback, jobs/runs/webhooks, memberships, consents and audit records. Scope every personal row and version mutable content.
+1. **Log:** every 5 minutes, the server sends the new transcript lines, Q&A pairs, repeat events and tone records. The audio clip upload stays as an option but is not required, since ElevenLabs already gives us the transcript.
+2. **Daily summary:** at 8 PM local (by hand in the demo). Inputs: the day's transcript, Q&A pairs, repeat counts, tone records and today's plan.
+3. **Patterns:** nightly, over the stored days (seeded for the demo). Same inputs across days.
 
-Retain `/ws`, `POST /facts`, `DELETE /facts/:id`, `GET /qa/today`, `POST /creao/webhook` and health/readiness routes. Add authenticated dashboard/SSE, plan, reminder, voice-feedback, consent, deletion and manual-summary routes. Mount canonical routes correctly: mounting `/facts` under `/creao` changes its URL. Use mutation idempotency keys, optimistic concurrency, pagination and saved/pending/failed UI states.
+**Summary output**
 
-## 8. Privacy and failure behavior
+```json
+{
+  "date": "2026-10-18",
+  "summary": "Rose had a calm morning. After lunch she asked where Mary was 4 times, and her voice sounded more worried each time.",
+  "repeatedQuestions": [
+    {"question": "Where is Mary?", "count": 4, "answeredBy": ["Sarah", "family fact"], "toneTrend": "rising worry", "times": ["13:10", "13:42", "14:05", "14:31"]}
+  ],
+  "highlights": ["Leo visited at 4 and Rose was calm"],
+  "suggestions": ["A call from Mary in the afternoon may reassure her"],
+  "coverage": "Listening 9:00 to 18:30, paused 30 minutes",
+  "sources": ["qe_9", "qe_12", "qe_17", "qe_21", "tone_42"]
+}
+```
 
-Separate consent for transcription, retained logs/clips, acoustic analysis and sharing with named supporters. Explain downstream processing; filtering other speakers afterward does not prevent their audio being processed. Revoke affected streams/jobs/results by consent version.
+**Instructions for every agent:** describe, don't diagnose. Say "sounded worried", never "is depressed" or "is declining". Don't name unknown speakers. If there's too little data, say so instead of inventing a trend. Cite the source record IDs. Suggestions are gentle ideas for the family, never medical advice.
 
-Use TLS, protected sessions, CSRF/origin checks and rate limits. Treat transcripts/provider output as untrusted. No secrets or private content in logs. Proposed pilot defaults: raw audio in bounded memory; opted-in clips removed after processing or 24 hours; transcripts/voice observations retained seven days. Facts follow their validity/review policy. Verify provider retention separately. Deletion covers derivatives, embeddings and pending jobs.
+## 9. Contracts (changes to the build guide)
 
-Q&A continues during emotion/CREAO outages. Unknown speakers and matcher timeouts cause abstention. Database failure must never show a false saved state. Track gaps, latency, queue age, provider failures, cost and stale content without private payloads.
+Contracts 1 to 6 in the build guide stay. Additions:
 
-## 9. Build order and acceptance
+- **Speech module (contract 2):** `startMs` and `endMs` must be measured from the session's first audio byte, because the server cuts tone audio from its own buffer on that clock.
+- **Tone module:** `server/src/emotion/index.ts` with `analyzeQuestion(eventId, pcm)`, which never throws. It calls `tone-service` at `TONE_URL`: `POST /tone` (WAV body, `X-Tone-Secret` header) returns `{model, scores, top, seconds, ms}`; `422` means too short.
+- **Facts (contract 4):** add optional `expiresAt` (ISO time) to each fact.
+- **New endpoints for D, same shared secret:** `GET /log/today` returns `transcript`, `questions` (each with its tone), `repeated` (question, count, times, worry per ask) and `pairs`; `GET` and `POST /settings` with `{"toneAnalysis": true|false}`.
+- **Creao module (contract 5):** add `submitLog(batch)`, which takes transcript lines, Q&A pairs, repeat events and tone records.
 
-Build contracts/store/auth → real G2/ElevenLabs → memory/facts/display → acoustic adapter → CREAO jobs → dashboard/patterns/reminders → privacy/recovery → packaging/demo.
+## 10. Future work (Devpost, not built now)
 
-Required acceptance evidence:
+- SQLite with migrations, household and person authorization, short-lived socket tickets, CSRF and origin checks, rate limits.
+- Consent per feature with versioning and revocation; retention and deletion across all derived data.
+- Full reminder lifecycle (scheduled, sent, acknowledged, missed), quiet hours, time zone and daylight-saving handling, medication schedules.
+- Binary audio protocol v2 with sequence numbers and sample offsets.
+- Live dashboard updates, pagination, idempotency keys and optimistic concurrency.
+- Corrections to tone estimates by the family, and validation of tone thresholds.
+- The additional dementia-support modules in `FULL_PRODUCT_SPEC.md`.
 
-- Real G2 new question/answer/repeat produces one correct sourced response; reject look-alikes, unrelated replies and overlap. Retain 20 match/10 non-match fixtures.
-- Edits, deletion, midnight and explicit expiry invalidate old answers; standing facts remain eligible correctly.
-- Pause/start races, gestures, system exit, mic stalls, reconnect and locked-phone Beta behavior work on hardware.
-- Three consecutive five-minute logs, daily summary, two-day patterns and insufficient-data cases work unattended.
-- Fact/visitor edits synchronize; reminder edit/cancel/restart/offline/DST cases yield one timely delivery or a missed state.
-- Forged/duplicate/early callbacks, malformed output, rate limits and ambiguous submissions cannot corrupt records or duplicate visible outcomes.
-- Identical words with different delivery exercise actual acoustic analysis; silence, poor audio, other speakers and playback abstain appropriately; stale cues expire.
-- Emotion outage leaves Q&A working; revocation stops sharing; household isolation and deletion are verified.
-- Long text/glyph handling preserves meaning; app playback never becomes a family answer; client bundles/logs contain no secrets.
+## 11. Build order and timeline
 
-Measure the original two-second Q&A target on real hardware; report median/p95 and sample count. Measure acoustic window duration separately. Deliver working code, migrations, requirement/test matrix, provider-capability record, setup/runbook, demo and explicit remaining blockers.
+| By | Milestone |
+| --- | --- |
+| Sat 10 PM | Real G2 audio reaches the server; live transcript logs; facts endpoint working |
+| **Sun 1 AM** | **Go/no-go:** a repeated question on the real G2 shows its earlier answer. If not, tone waits until it does |
+| Sun 3 AM | Tone records stored for wearer questions; dashboard shows facts and today's log |
+| Sun 5 AM | Log and summary agents use transcript and tone; repeated-question view with tone trend |
+| Sun 7 AM | Patterns on seeded history; stretch items if time allows |
+| **Sun 9:30 AM** | **Feature freeze.** Beta packaged, then everyone on pitch, demo and Devpost |
+
+## 12. Acceptance (what we check before the demo)
+
+- On the real G2: a new question and answer, then a repeat, produce one correct sourced line in about 2 seconds or less. Look-alikes, unrelated replies and other people's questions show nothing. The 20 and 10 fixtures pass with zero wrong matches.
+- Editing or deleting a fact changes the next answer; midnight and `expiresAt` expiry work.
+- Pause, gestures, system exit and the installed Beta after a five-minute phone lock work on hardware.
+- The same question asked calmly and worriedly produces different worry scores; silence and other speakers produce none; turning tone off stops calls to the tone service.
+- With the tone service or Creao disconnected, answers still reach the glasses.
+- The daily summary mentions repeated questions with counts and tone, cites sources, and makes no diagnosis.
+- No API keys in the phone app bundle or the logs.
 
 ## References
 
-- [ElevenLabs realtime API](https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime)
-- [Expressive Mode](https://elevenlabs.io/docs/eleven-agents/customization/voice/expressive-mode) · [Sentiment analysis](https://elevenlabs.io/docs/eleven-agents/customization/agent-analysis/sentiment-analysis)
-- [Hume realtime audio](https://dev.hume.ai/expression-measurement/docs/audio/realtime) · [Score semantics](https://dev.hume.ai/expression-measurement/docs/scores)
 - [Even Hub device APIs](https://hub.evenrealities.com/docs/build/device-apis)
+- [ElevenLabs speech to text](https://elevenlabs.io/docs/overview/capabilities/speech-to-text)
+- [emotion2vec+ on Hugging Face](https://huggingface.co/emotion2vec/emotion2vec_plus_base)
 
-Vendor behavior must be verified during implementation. Thresholds and budgets above are engineering proposals, not clinical guarantees.
+Vendor behavior must be confirmed during the build. Thresholds are engineering starting points, not clinical guarantees.
