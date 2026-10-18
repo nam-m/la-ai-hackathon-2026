@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Beat 5 bridge: a human approves a Care assistant proposal, then it is posted to the server's POST /facts.
+// Approval bridge: a human approves a Care assistant proposal, then it is posted to the server's POST /facts.
 // The agent only proposes. Nothing reaches the glasses until a person types APPROVE here.
 //
 //   FACTS_SECRET=... SERVER_URL=https://<server> node care-agents/approve-proposal.mjs proposal.json [--id fact_visit] [--by Sarah] [--dry-run]

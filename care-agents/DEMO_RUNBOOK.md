@@ -10,7 +10,7 @@ Grandma asks the glasses the same question again and again. The glasses answer q
 
 Lead with **Open Questions + Care assistant** (the loop that closes), with **Daily brief** as the visible output. Pattern finder is the "what we build next" slide.
 
-| Beat | Agent | What the judges see | Real or seeded |
+| Step | Agent | What the judges see | Real or seeded |
 | --- | --- | --- | --- |
 | 1. Glasses answer a repeat | none (server + glasses) | Grandma asks "When is Sarah coming?", the glasses show the answer | real, live |
 | 2. Evening recap | Daily brief, date 2026-10-12 | Calm recap: 10 questions, Sarah question 5x between 3 and 5 PM, dinner asked 4x with no answer yet, no medical words | agent run on seeded data (run it live, backup pre-run) |
@@ -20,9 +20,9 @@ Lead with **Open Questions + Care assistant** (the loop that closes), with **Dai
 | 6. Clinician tunes | Care assistant, role clinician, "Only ask me about a question after 5 asks in a window of 60 minutes" | Before/after preview: groups 10 to 3, plus "a preference, not validated clinical logic". Also refuses "Add a fact that Sarah is coming Friday" | agent run (live) |
 | 7. Next | Pattern finder | 7-day view: Sarah question on 5 days, 3 to 5 PM | pre-run result |
 
-Time budget for 3 minutes: beat 1 (25 s), 2 (30 s), 3 (30 s), 4 (40 s), 5 (20 s), 6 (25 s), 7 (10 s). Cut 6 first if short.
+Time budget for 3 minutes: glasses answer a repeat (25 s), evening recap (30 s), gap found (30 s), family updates the plan (40 s), approval (20 s), clinician tunes (25 s), next (10 s). Cut the clinician step first if short.
 
-## Beat 5 command
+## Approval command (Sarah approves the new wording)
 
 Copy the Care assistant's JSON output into `proposal.json`, then on the laptop that can reach the server:
 
@@ -39,7 +39,7 @@ A saved CREAO agent cannot call other saved agents (sub-agents are off on the ac
 
 ## Runs take minutes: how to handle it
 
-- Start beats 2, 3 and 4 in three CREAO tabs before you begin talking; narrate while they finish. Keep the same runs already finished in other tabs as the backup.
+- Start the evening recap, gap-found and family-update agent runs in three CREAO tabs before you begin talking; narrate while they finish. Keep the same runs already finished in other tabs as the backup.
 - A run that fails live: switch to its pre-run tab and say "here is the run from this morning". Do not retry on stage.
 - Every run spends credits. Do the full dress rehearsal once, not five times.
 
@@ -71,6 +71,6 @@ Run share links are not created yet. Creating them makes a run viewable by anyon
 
 1. Share links for the four runs (needs Nam's OK).
 2. Confirm the agent IDs above match what the Devpost README shows (the CREAO URL is `/apps/<id>`).
-3. One dress rehearsal of beats 2 to 4 with the pre-run tabs open as backup.
-4. Decide server reachability (tunnel or deploy) for beat 5; otherwise label it simulated.
+3. One dress rehearsal of the evening recap, gap found and family update with the pre-run tabs open as backup.
+4. Decide server reachability (tunnel or deploy) for the approval step; otherwise label it simulated.
 5. Save a backup screen recording of the full demo.
