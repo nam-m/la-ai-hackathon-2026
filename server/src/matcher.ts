@@ -129,17 +129,27 @@ export async function askYesNo(prompt: string): Promise<boolean> {
   return config.verifyProvider === 'stepfun' ? stepfunYesNo(prompt) : geminiYesNo(prompt)
 }
 
+let lastEmptyWarnAt = 0
+
 async function stepfunYesNo(prompt: string): Promise<boolean> {
   if (!config.stepfunApiKey || !config.stepfunModel) throw new Error('StepFun selected but STEPFUN_API_KEY or STEPFUN_MODEL is missing')
   const res = await fetch(`${config.stepfunBaseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${config.stepfunApiKey}` },
-    body: JSON.stringify({ model: config.stepfunModel, messages: [{ role: 'user', content: prompt }], temperature: 0, max_tokens: 5 }),
+    // 32, not 5: a reasoning model's thinking can count against max_tokens and leave no room for "yes".
+    body: JSON.stringify({ model: config.stepfunModel, messages: [{ role: 'user', content: prompt }], temperature: 0, max_tokens: 32 }),
     signal: AbortSignal.timeout(1500),
   })
   if (!res.ok) throw new Error(`stepfun verify ${res.status}: ${(await res.text()).slice(0, 200)}`)
-  const json = (await res.json()) as { choices?: { message?: { content?: string } }[] }
-  return /^\s*yes/i.test(json.choices?.[0]?.message?.content ?? '')
+  const json = (await res.json()) as { choices?: { message?: { content?: string }; finish_reason?: string }[] }
+  const choice = json.choices?.[0]
+  const text = choice?.message?.content ?? ''
+  if (!text.trim() && Date.now() - lastEmptyWarnAt > 60_000) {
+    // Counts as "no" either way; say why, so it doesn't look like "nothing matches".
+    lastEmptyWarnAt = Date.now()
+    console.warn(`[matcher] StepFun returned no text (finish_reason=${choice?.finish_reason ?? '?'}); pick a non-reasoning STEPFUN_MODEL`)
+  }
+  return /^\s*yes/i.test(text)
 }
 
 async function geminiYesNo(prompt: string): Promise<boolean> {

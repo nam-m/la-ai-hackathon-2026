@@ -72,7 +72,7 @@ Without `GEMINI_API_KEY` the server uses a crude local matcher so it still runs;
 
 ### StepFun for the yes/no checks
 
-The yes/no checks (same question? a real reply? do two answers agree?) can run on StepFun instead of Gemini: set `VERIFY_PROVIDER=stepfun`, `STEPFUN_API_KEY` and `STEPFUN_MODEL` (a fast chat model from platform.stepfun.com; `STEPFUN_BASE_URL` is `api.stepfun.ai` for international keys, `api.stepfun.com` for China-region keys). Embeddings stay on Gemini, so `GEMINI_API_KEY` is still required.
+The yes/no checks (same question? a real reply? do two answers agree?) can run on StepFun instead of Gemini: set `VERIFY_PROVIDER=stepfun`, `STEPFUN_API_KEY` and `STEPFUN_MODEL` (a fast **non-reasoning** chat model from platform.stepfun.com; a reasoning model may spend its tokens thinking and return an empty answer, which counts as no and is logged as a warning; `STEPFUN_BASE_URL` is `api.stepfun.ai` for international keys, `api.stepfun.com` for China-region keys). Embeddings stay on Gemini, so `GEMINI_API_KEY` is still required.
 
 Switch only after comparing: run `npm run test:matcher`, then `VERIFY_PROVIDER=stepfun npm run test:matcher`. Keep StepFun only if wrong matches stay at 0 and the ms per question leaves room under the 2-second cap. `/health` shows which provider is active (`verify`).
 
