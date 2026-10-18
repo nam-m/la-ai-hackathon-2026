@@ -1,0 +1,22 @@
+{
+ "facts": [
+  {
+   "id": "f1",
+   "question": "When is Sarah coming?",
+   "answer": "Your daughter Sarah visits on Thursdays at 3 PM.",
+   "valid_until": null
+  },
+  {
+   "id": "f2",
+   "question": "Where do I live?",
+   "answer": "You live at 42 Maple Street with your wife Anna.",
+   "valid_until": null
+  },
+  {
+   "id": "f3",
+   "question": "What day is it?",
+   "answer": "Check the calendar on the kitchen wall; it shows today.",
+   "valid_until": null
+  }
+ ]
+}
