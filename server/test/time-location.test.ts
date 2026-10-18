@@ -215,3 +215,17 @@ test('session: an update nobody asked for is saved word for word as the newest a
   await settle();
   assert.ok(store.allRecords().some(r => r.answer === 'Oh and lunch is at 2 now.' && r.replaces === 'lunch'));
 });
+
+test('session: the rest of a reply split into sentences joins the stored answer', async t => {
+  clear();
+  const h = harness(t);
+  const q = u('qm', 'wearer', 0, 'Where is Marie?');
+  h.speech.onUtterance(q);
+  h.speech.onWearerQuestion(q);
+  const a1 = u('am1', 'other', 1500, 'Marie is at the store.');
+  const a2 = u('am2', 'other', 2700, "She'll be back at three.");
+  for (const a of [a1, a2]) { h.speech.onUtterance(a); h.speech.onPair({ question: q, answer: a }); }
+  await settle();
+  const answers = store.allRecords().filter(r => r.question === 'Where is Marie?').map(r => r.answer);
+  assert.deepEqual(answers, ["Marie is at the store. She'll be back at three."]);
+});

@@ -39,6 +39,12 @@ const defaultDependencies: SessionDependencies = {
 
 /** How long a spoken pair waits for the answerer's voice check, so the glasses can say "Kevin · 10:40 AM". */
 const ANSWERER_WAIT_MS = 1500
+/** A reply's next sentence joins the stored answer when it starts this soon after the last one. */
+const REPLY_CONTINUES_MS = 2000
+const MAX_ANSWER_CHARS = 300
+// A sentence that carries on the one before ("She'll be back at three.", "And bring a coat.") rather than a new
+// answer of its own ("Lunch is at one.", which stays a separate candidate).
+const CONTINUES = /^(?:she|he|it|they|we|i|you|and|but|so|then|also|because|or|plus|around|about|at|by|after|before|until|till|since|though|which|there|that|probably|maybe)\b/i
 /** Audio added either side of a question for tone (live questions are often 0.5-0.9 s; tone needs 1 s). */
 const TONE_PAD_MS = 350
 
@@ -77,6 +83,9 @@ export class Session {
   private placeLookup: Promise<Place | null> | null = null
   /** Other-person lines that went to the pair check; the rest are checked as updates nobody asked for. */
   private pairCandidates = new Set<string>()
+  /** Per wearer question: the stored answer and where it ends, so the rest of the same reply joins it. */
+  private savedPairs = new Map<string, { recordId: string; endMs: number }>()
+  private lastWearerStartMs = -1
 
   constructor(private ws: WebSocket, private readonly dependencies: SessionDependencies = defaultDependencies) {
     sessions.add(this)
@@ -216,6 +225,7 @@ export class Session {
     store.addTranscript({ id, at: new Date().toISOString(), role: u.role, name: u.role === 'other' ? u.name : null, text: u.text })
     this.voices?.onUtterance(u, id)
     // onPair, if this line is a candidate reply, comes right after; a line that isn't one may be an update.
+    if (u.role === 'wearer') this.lastWearerStartMs = Math.max(this.lastWearerStartMs, u.startMs)
     if (u.role === 'other') setImmediate(() => { if (!this.pairCandidates.delete(u.id)) void this.checkUpdate(u) })
   }
 
@@ -337,9 +347,35 @@ export class Session {
     this.pairCandidates.add(p.answer.id)
     const previous = this.pairChecks.get(qid) ?? Promise.resolve(false)
     // Chain per question so two candidates checked at once can't both be saved. Once one is, later ones may still be updates.
-    const next = previous.then(saved => saved ? (void this.checkUpdate(p.answer), true) : this.tryPair(p, generation, answeredAt)).catch(() => false)
+    const next = previous.then(saved => saved ? this.continuePair(p) : this.tryPair(p, generation, answeredAt)).catch(() => false)
     this.pairChecks.set(qid, next)
     if (this.pairChecks.size > 50) this.pairChecks.delete(this.pairChecks.keys().next().value!) // old windows are long closed
+  }
+
+  /**
+   * Speech splits a reply into sentences ("Marie is at the store." "She'll be back at three."). A sentence that
+   * carries on the reply (no pause over 2 s, the wearer didn't speak in between, it reads as a continuation) joins
+   * the stored answer; anything else may still be an update.
+   */
+  private continuePair(p: QAPair): true {
+    const saved = this.savedPairs.get(p.question.id)
+    const record = saved && store.get(saved.recordId)
+    const gap = saved ? p.answer.startMs - saved.endMs : Infinity
+    const wearerSpoke = saved ? this.lastWearerStartMs > saved.endMs && this.lastWearerStartMs < p.answer.startMs : true
+    if (record && saved && p.answer.role === 'other' && gap >= -100 && gap <= REPLY_CONTINUES_MS && !wearerSpoke && CONTINUES.test(p.answer.text.trim())) {
+      const answer = `${record.answer} ${p.answer.text}`.replace(/\s+/g, ' ').trim()
+      if (answer.length <= MAX_ANSWER_CHARS) {
+        const updated: QARecord = { ...record, answer }
+        const forDate = dayOf(answer) ?? record.forDate
+        if (forDate) updated.forDate = forDate
+        store.upsert(updated)
+        saved.endMs = p.answer.endMs
+        console.log(`[store] pair ${record.id} continues: "${answer}"`)
+        return true
+      }
+    }
+    void this.checkUpdate(p.answer)
+    return true
   }
 
   private async tryPair(p: QAPair, generation: number, answeredAt: number): Promise<boolean> {
@@ -378,6 +414,8 @@ export class Session {
     const forDate = dayOf(p.answer.text) ?? dayOf(p.question.text)
     if (forDate) record.forDate = forDate
     store.upsert(record)
+    this.savedPairs.set(p.question.id, { recordId: record.id, endMs: p.answer.endMs })
+    if (this.savedPairs.size > 50) this.savedPairs.delete(this.savedPairs.keys().next().value!)
     // Their name may come later ("Thanks, Sarah"); then this answer says who gave it too.
     if (!answeredBy) this.voices?.whenNamed(p.answer.id, name => {
       const saved = store.get(record.id)
