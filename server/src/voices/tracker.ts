@@ -101,6 +101,8 @@ export class VoiceTracker {
   private turn: Turn | null = null
   private lastTurn: Turn | null = null
   private addressed: (PendingName & { untilMs: number }) | null = null
+  /** "I'm Kevin." said first, too short to check: the next unnamed voice heard within 30 s is Kevin. */
+  private orphanName: (PendingName & { untilMs: number }) | null = null
   private current: string | null = null // voice of the ongoing turn: it keeps the label down to threshold - STICKY
   private recent: { voiceId: string; atMs: number } | null = null // last recognized voice, on the utterance clock
   private results = new Map<string, { turn: Turn; job: Promise<string | null> }>() // utterance id -> its voice check
@@ -240,6 +242,10 @@ export class VoiceTracker {
     if (!pending || turn.voiceId) return
     turn.pendingName = undefined
     const v = this.recentVoice(turn.startMs)
+    if (!v && pending.finding.kind !== 'addressed_by_wearer') {
+      this.orphanName = { ...pending, untilMs: turn.endMs + RECENT_MS }
+      return this.log({ kind: 'name_found', text: pending.text, detail: `${pending.finding.name}: line too short to check; the next unnamed voice in 30 s gets it` })
+    }
     if (!v) return this.log({ kind: 'name_lost', text: pending.text, detail: `${pending.finding.name}: not enough of their voice to remember` })
     turn.voiceId = v.id
     this.log({ kind: 'name_found', text: pending.text, voiceId: v.id, voice: label(v), detail: `${pending.finding.name}: their line was too short to check, so it goes to the voice heard just before` })
@@ -290,6 +296,14 @@ export class VoiceTracker {
     this.current = voiceId
     this.recent = { voiceId, atMs: u.endMs }
     turn.voiceId = voiceId
+    if (this.orphanName && !turn.pendingName) {
+      const orphan = this.orphanName
+      if (u.startMs > orphan.untilMs) this.orphanName = null
+      else if (!g.get(voiceId)?.name) {
+        this.orphanName = null
+        turn.pendingName = orphan
+      }
+    }
     for (const callback of turn.callbacks.splice(0)) this.onNamed(voiceId, callback)
     if (turn.pendingName) {
       const pending = turn.pendingName

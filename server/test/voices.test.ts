@@ -372,3 +372,28 @@ test('tracker: a voice remembered without a name gets it later, even from a line
   assert.equal(g.list()[0]?.name, 'Kevin');
   assert.equal(g.list().length, 1);
 });
+
+test('tracker: "I\'m Kevin." said first after a long break goes to the unnamed voice heard right after', async () => {
+  const { persist } = memory();
+  const g = new Gallery(persist, 0.47);
+  const anon = g.createUnnamed(print(KEVIN)) as VoiceRecord; // remembered an hour ago, no name
+  const t = new VoiceTracker({
+    session: () => 'test', gallery: g,
+    clip: (startMs, endMs) => new Uint8Array(Math.round((endMs - startMs) * 32)),
+    // Like the real service: a padded 0.4 s line holds under 0.6 s of speech.
+    embed: async pcm => pcm.byteLength < 1.1 * 32_000 ? { ok: false, reason: 'too_short' } : { ok: true, print: print(KEVIN, pcm.byteLength / 32_000) },
+    extractName: async lines => lines[lines.length - 1].text === "I'm Kevin." ? finding('Kevin', 'self_intro') : null,
+    send: () => {},
+  });
+  let n = 0;
+  const say = async (role: Utterance['role'], startMs: number, endMs: number, text: string) => {
+    t.onUtterance({ id: `o${++n}`, role, isWearer: role === 'wearer', text, startMs, endMs, rmsDb: -30, speaker: null, name: null }, `m${n}`);
+    await settle();
+  };
+  await say('other', 0, 400, "I'm Kevin."); // too short, nobody heard before it
+  await say('wearer', 1000, 2000, 'Oh, hello.');
+  await settle();
+  assert.equal(g.get(anon.id)?.name, null);
+  await say('other', 3000, 7000, 'I come by on Sundays to read the paper with you.'); // recognized as the anonymous voice
+  assert.equal(g.get(anon.id)?.name, 'Kevin');
+});
