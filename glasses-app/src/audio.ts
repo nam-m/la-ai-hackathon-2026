@@ -4,6 +4,9 @@ import { AudioInputSource, type AudioEvent, type EvenAppBridge } from '@evenreal
 // room. A gap this long means capture stopped under us (WebView suspended, BLE
 // hiccup), so the watchdog re-arms it.
 const STALL_MS = 3_000
+// audioControl also returns false on a passing BLE hiccup, and the wearer may
+// not think to tap, so a blocked mic is retried on its own this often.
+const DENIED_RETRY_MS = 15_000
 
 export type MicState = 'off' | 'starting' | 'live' | 'denied'
 
@@ -17,6 +20,7 @@ export class Mic {
   state: MicState = 'off'
   private wanted = false
   private arming = false
+  private lastArmAt = 0
   private lastChunkAt = 0
   private watchdog: ReturnType<typeof setInterval> | undefined
 
@@ -38,7 +42,11 @@ export class Mic {
     clearInterval(this.watchdog)
     this.watchdog = undefined
     this.setState('off')
-    await this.bridge.audioControl(false)
+    try {
+      await this.bridge.audioControl(false)
+    } catch (err) {
+      console.error('[mic] audioControl(false) failed', err)
+    }
   }
 
   /** Feed every `audioEvent` from the bridge here. */
@@ -55,9 +63,13 @@ export class Mic {
   }
 
   private checkStall() {
-    // A denied mic stays denied until the wearer taps to retry, so the
-    // permission prompt isn't fired every few seconds.
-    if (!this.wanted || this.state === 'denied' || !this.stalled()) return
+    if (!this.wanted) return
+    if (this.state === 'denied') {
+      // Slowly, so a real permission denial doesn't re-prompt every few seconds.
+      if (Date.now() - this.lastArmAt > DENIED_RETRY_MS) void this.arm()
+      return
+    }
+    if (!this.stalled()) return
     console.warn('[mic] no audio for', STALL_MS, 'ms, re-arming')
     void this.arm()
   }
@@ -65,6 +77,7 @@ export class Mic {
   private async arm() {
     if (this.arming) return
     this.arming = true
+    this.lastArmAt = Date.now()
     this.setState('starting')
     try {
       // The glasses mic only opens once the startup page exists; main.ts creates it first.

@@ -55,14 +55,15 @@ const rateTimer = setInterval(() => {
   lastBytes = socket.bytesSent
 }, 1_000)
 
-socket.start()
-// The glasses mic needs the startup page, which exists by now.
-if (!paused) await mic.ensureOn()
-
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') resume()
 })
 window.addEventListener('beforeunload', cleanup)
+
+socket.start()
+// The glasses mic needs the startup page, which exists by now. Not awaited:
+// a slow audioControl must not hold up anything else.
+if (!paused) void mic.ensureOn()
 
 function handleServer(msg: ServerMessage) {
   switch (msg.type) {
@@ -146,6 +147,11 @@ async function setPaused(next: boolean) {
   phone.setMic(mic.state, paused)
   socket.send({ v: 1, type: 'control', action: paused ? 'pause' : 'resume' })
   persist()
+  if (paused && recording) {
+    // No audio arrives while paused, so the recording could never finish.
+    recording = null
+    phone.setRecording('Recording stopped: paused.', false)
+  }
   // Pause turns the mic fully off, not just the upload: nothing is heard while paused.
   if (paused) await mic.off()
   else await mic.ensureOn()
