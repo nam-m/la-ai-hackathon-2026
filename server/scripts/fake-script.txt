@@ -1,0 +1,12 @@
+# Fake conversation for SPEECH_PROVIDER=fake.
+# Format: <seconds after previous line> | <wearer|Name> | <text>
+# A wearer line ending in "?" is a question; the next non-wearer line is its answer.
+2 | wearer | What time is lunch?
+2 | Sarah | Lunch is at noon.
+3 | Sarah | I'm going to water the plants.
+3 | wearer | Is it a nice day outside
+4 | wearer | When do we eat?
+4 | wearer | Where is lunch?
+3 | Sarah | We're eating on the patio today.
+4 | wearer | Where is Mary?
+4 | wearer | What time do we eat lunch?

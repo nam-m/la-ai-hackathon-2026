@@ -1,0 +1,29 @@
+import 'dotenv/config'
+
+const env = (name: string, fallback = '') => process.env[name] ?? fallback
+
+export const config = {
+  port: Number(env('PORT', '8080')),
+  appToken: env('APP_TOKEN', 'change-me-app'),
+  factsSecret: env('FACTS_SECRET', 'change-me-facts'),
+  webhookSecret: env('WEBHOOK_SECRET', 'change-me-webhook'), // rides in the Creao webhook URL; separate from FACTS_SECRET
+  publicUrl: env('PUBLIC_URL', 'http://localhost:8080'),
+  timezone: env('TIMEZONE', 'America/Los_Angeles'),
+  speechProvider: env('SPEECH_PROVIDER', 'fake') as 'fake' | 'deepgram' | 'elevenlabs',
+  speechApiKey: env('SPEECH_API_KEY'),
+  geminiApiKey: env('GEMINI_API_KEY'),
+  embedModel: env('EMBED_MODEL', 'gemini-embedding-001'),
+  verifyModel: env('VERIFY_MODEL', 'gemini-2.5-flash'),
+  matchThreshold: Number(env('MATCH_THRESHOLD', '0.80')),
+  dataFile: env('DATA_FILE', './data/store.json'),
+  toneUrl: env('TONE_URL'), // empty = tone analysis off
+  toneSecret: env('TONE_SECRET', 'change-me-tone'),
+  // Server-driven Creao runs, wearer's local time, HH:MM.
+  summaryAt: env('SUMMARY_AT', '20:00'),
+  patternsAt: env('PATTERNS_AT', '23:30'),
+  // /debug/* routes; off when NODE_ENV=production (the Dockerfile sets it).
+  debugRoutes: env('NODE_ENV') !== 'production',
+}
+
+/** D: pass this as webhook_url when starting Creao runs. Creao can't send our Bearer header, so the secret rides here. */
+export const webhookUrl = () => `${config.publicUrl}/creao/webhook?s=${encodeURIComponent(config.webhookSecret)}`
