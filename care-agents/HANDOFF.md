@@ -9,9 +9,9 @@ Four CREAO agents, built on Nam's CREAO account (team "Nam's team"), **personal 
 | Agent | CREAO app id | Open |
 | --- | --- | --- |
 | Daily brief (v1.1.0) | cc26aad8-308e-4bba-9d1a-164dfed81be5 | https://agent.creao.ai/apps/cc26aad8-308e-4bba-9d1a-164dfed81be5 |
-| Pattern finder | 1dd9ddd9-a2a2-491a-a4aa-89f165fd277f | https://agent.creao.ai/apps/1dd9ddd9-a2a2-491a-a4aa-89f165fd277f |
+| Pattern finder (tone fix) | 1dd9ddd9-a2a2-491a-a4aa-89f165fd277f | https://agent.creao.ai/apps/1dd9ddd9-a2a2-491a-a4aa-89f165fd277f |
 | Open Questions | 44b1a649-026f-4b4f-84f5-1142ba9a2c63 | https://agent.creao.ai/apps/44b1a649-026f-4b4f-84f5-1142ba9a2c63 |
-| Care assistant | ff8a0dd2-4b8a-454f-a3c5-e231d5c5edd2 | https://agent.creao.ai/apps/ff8a0dd2-4b8a-454f-a3c5-e231d5c5edd2 |
+| Care assistant (v1.1.0) | ff8a0dd2-4b8a-454f-a3c5-e231d5c5edd2 | https://agent.creao.ai/apps/ff8a0dd2-4b8a-454f-a3c5-e231d5c5edd2 |
 
 Seed data is embedded in each agent as reference data (pasted inline; file attach was not used). Nothing is scheduled, published, shared or connected to email/SMS.
 
@@ -39,15 +39,13 @@ Seed data is embedded in each agent as reference data (pasted inline; file attac
 
 ## Known issues to fix or accept
 
-1. Pattern finder returns `tone_trend` as raw emotion counts (fearful 5, happy 10 ...). Our rule says tone only as a trend over 3+ observations, never an absolute number. Ask it to return trend labels (steady / more worried / less worried) or drop tone.
-2. Clinician preview for "repeat after 2 asks" shows `open_questions_total` unchanged (22) and a confusing `repeated_phrase_clusters` 5 to 13. The setting only affects the Daily brief's repeat grouping; the preview should show Daily brief repeat counts per day before/after, nothing about open questions.
+1. FIXED 07:35 PT: Pattern finder `tone_trend` is now one label (steady / more worried / less worried / not enough data), no raw counts. Sarah cluster comes out "more worried" at a gap of exactly 0.25 (3/12 to 6/12 worry flags), right at the threshold; treat as sensitive wording.
+2. FIXED 07:35 PT: Care assistant clinician preview now shows per-day Daily brief repeat-group counts before/after plus total, with a one-sentence note. Caveat: "repeat after 2 asks" changes nothing on the seed (all groups already have 3+ asks, 10 before and 10 after); "5 asks in 60 minutes" drops groups from 10 to 3. Use the second case in the demo.
 3. Daily brief tone trend for the Sarah group on 10-12 is "more worried" from one worry flag in the later half of 5 observations. Sensitive wording for a caregiver; consider requiring 6+ observations or a 0.4 gap before saying it.
 4. Not tested: whether a CREAO agent can call our server (POST /facts, /proposals) from its sandbox; CREAO dashboard form input; text/SMS connector. Only email scheduled-run delivery is documented.
 5. The agents return proposals only. Nothing writes facts anywhere; the confirm page and server enforcement of roles are not built yet.
 
 ## Next steps
 
-1. Fix issues 1 and 2 (one chat message each to the agent's creation thread, or edit via the agent page).
-2. 10-minute test: can an agent call a public URL (webhook.site) from its sandbox? Decides whether the server link is live or demo-only.
-3. Schedule Daily brief at 8 PM and email the caregiver (only after Nam approves).
-4. Commit this folder and `CARE_SIDE_AGENT_PLATFORM.md` to main.
+1. 10-minute test: can an agent call a public URL (webhook.site) from its sandbox? Decides whether the server link is live or demo-only.
+2. Schedule Daily brief at 8 PM and email the caregiver (only after Nam approves).
