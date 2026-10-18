@@ -45,6 +45,29 @@ Seed data is embedded in each agent as reference data (pasted inline; file attac
 4. Server link, partly tested 07:40 PT: from a CREAO chat sandbox, outbound HTTPS to arbitrary public hosts works (POST JSON to httpbin.org 200 in 0.4s, api.github.com 200, example.com 200). So an agent can POST to our server's /facts or /proposals IF the server has a public HTTPS URL (a laptop localhost needs a tunnel such as ngrok or a deploy). Not yet tested from a registered agent's own run (only the chat sandbox), with a real token as a CREAO secret, or from a dashboard form. CREAO dashboard form input and text/SMS connector are also untested; only email scheduled-run delivery is documented.
 5. The agents return proposals only. Nothing writes facts anywhere; the confirm page and server enforcement of roles are not built yet.
 
+## Teammate handover
+
+**Who owns what.** One person owns the agents and runs the care-side demo from a single CREAO account. Everyone else works from this folder.
+
+**Getting the agents into another workspace.** The four agents are personal and unpublished on Nam's account.
+1. Install links (preferred): the owner clicks Share on each agent and posts the four links here. A teammate opens a link and installs it into their own workspace. Untested from the receiving side; have one teammate try a link before relying on it.
+
+   | Agent | Install link |
+   | --- | --- |
+   | Daily brief | <INSTALL LINK> |
+   | Pattern finder | <INSTALL LINK> |
+   | Open Questions | <INSTALL LINK> |
+   | Care assistant | <INSTALL LINK> |
+
+2. Backup: rebuild from `AGENT_SPECS.md` and `seed/` (about 10 minutes per agent, see "What exists").
+3. Last resort: run the demo from Nam's account.
+
+**There is no orchestrator agent.** A saved agent cannot call other saved agents (see "Orchestration finding" in `DEMO_RUNBOOK.md`). The orchestration is a prompt typed into CREAO chat, in the workspace where all four agents are installed: "Run the evening routine for 2026-10-17: Open Questions and Pattern finder in parallel, then Daily brief for 2026-10-12, show the combined JSON and per-step times." Say on stage that the chat orchestrates our saved agents.
+
+**How the demo shows the pipeline.** Glasses answer a repeated question; the server log (`GET /log/today`) shows what was heard and matched; the CREAO chat runs the agents on the seeded week; Care assistant proposes new wording; `approve-proposal.mjs` posts it after a person types APPROVE; the glasses give the updated answer. CREAO runs on seeded data, not the live log, because `server/src/creao/` is still stubs. State this to the judges.
+
+**Open items.** Server URL and who holds `FACTS_SECRET`; the Sarah fact id on the server; dashboard merge; full rehearsal once; run links for the Devpost block; the Daily brief tone threshold (issue 3 below).
+
 ## Next steps
 
 1. Decide how the server is reachable (tunnel or deploy), then have Care assistant POST a proposal to it from a registered agent run. If not reachable, demo the confirm flow from seeded data.
