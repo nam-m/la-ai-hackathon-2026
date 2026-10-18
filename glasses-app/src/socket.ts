@@ -1,5 +1,5 @@
 import { APP_TOKEN, SERVER_URL, SESSION } from './config'
-import { parseServerMessage, type ClientMessage, type ServerMessage } from './protocol'
+import { isSpeakerRole, parseServerMessage, type ClientMessage, type ServerMessage, type SpeakerRole } from './protocol'
 
 const PING_EVERY_MS = 15_000
 // A socket can sit in OPEN long after the network under it died (phone asleep,
@@ -23,6 +23,8 @@ export class ServerSocket {
   private retryTimer: ReturnType<typeof setTimeout> | undefined
   private pingTimer: ReturnType<typeof setInterval> | undefined
   private stopped = true
+  /** The speakerRole this connection was last told, so it is sent only on a change. */
+  private sentRole: SpeakerRole | null = null
   /** Audio bytes sent so far, for the phone's rate readout. */
   bytesSent = 0
 
@@ -47,9 +49,16 @@ export class ServerSocket {
     if (this.isOpen) this.ws!.send(JSON.stringify(msg))
   }
 
-  /** Sends one PCM chunk. Dropped while disconnected: late live audio is useless. */
-  sendAudio(pcm: Uint8Array) {
+  /**
+   * Sends one PCM chunk, preceded by the glasses' speakerRole for it when that changed.
+   * Dropped while disconnected: late live audio is useless.
+   */
+  sendAudio(pcm: Uint8Array, role?: string) {
     if (!this.isOpen) return
+    if (isSpeakerRole(role) && role !== this.sentRole) {
+      this.send({ v: 1, type: 'role', role })
+      this.sentRole = role
+    }
     this.ws!.send(pcm)
     this.bytesSent += pcm.byteLength
   }
@@ -84,6 +93,7 @@ export class ServerSocket {
     ws.onopen = () => {
       this.attempt = 0
       this.lastHeard = Date.now()
+      this.sentRole = null // a new connection knows no role yet
       // Contract 1: hello first after every connect.
       this.send({ v: 1, type: 'hello', session: SESSION, source: 'glasses' })
       this.pingTimer = setInterval(() => this.ping(), PING_EVERY_MS)

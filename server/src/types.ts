@@ -48,6 +48,8 @@ export type PhoneMessage =
   | { v: 1; type: 'hello'; session: string; source: 'glasses' | 'phone' }
   | { v: 1; type: 'control'; action: 'pause' | 'resume' }
   | { v: 1; type: 'ping' }
+  /** The glasses' speakerRole for the audio frames that follow; sent when it changes. */
+  | { v: 1; type: 'role'; role: 'self' | 'other' | 'unknown' }
 
 /** Contract 1: server to phone. */
 export type ServerMessage =

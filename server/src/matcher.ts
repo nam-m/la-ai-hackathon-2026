@@ -8,6 +8,9 @@ import type { QARecord } from './types.js'
  * 2. Candidates above MATCH_THRESHOLD, preferring the newest spoken answer, then family facts.
  * 3. Yes/no double-check with a fast model. It never writes the answer.
  * 4. A spoken answer that contradicts a matching family fact means nothing is shown.
+ * Without a Gemini key but with an Anthropic key, Claude replaces steps 1-3: one call picks the
+ * stored questions that ask the same thing (Claude has no embeddings API), and Claude answers the
+ * remaining yes/no checks.
  * Any failure returns null: showing nothing is always safe.
  */
 
@@ -21,7 +24,11 @@ export type MatchLog = {
 }
 
 const GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models'
+const CLAUDE = 'https://api.anthropic.com/v1/messages'
 const useGemini = () => Boolean(config.geminiApiKey)
+const useClaude = () => !useGemini() && Boolean(config.anthropicApiKey)
+/** A model to ask; without one the offline fallbacks below decide. */
+const hasModel = () => useGemini() || useClaude()
 const DEADLINE_MS = 2000 // whole match, question end to decision (spec 6.2: timeout returns nothing)
 
 // ---------- embeddings ----------
@@ -84,7 +91,7 @@ const whWord = (q: string) =>
   /\bwhat time\b|\bhow long until\b/i.test(q) ? 'when' : WH.find(w => new RegExp(`\\b${w}`, 'i').test(q))
 
 async function sameQuestion(a: string, b: string): Promise<boolean> {
-  if (!useGemini()) {
+  if (!hasModel()) {
     // Offline: reject different question words ("when" vs "where").
     const wa = whWord(a), wb = whWord(b)
     return !(wa && wb && wa !== wb)
@@ -99,7 +106,7 @@ async function sameQuestion(a: string, b: string): Promise<boolean> {
 async function sameAnswer(a: string, b: string): Promise<boolean> {
   const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
   if (norm(a) === norm(b)) return true
-  if (!useGemini()) return false // offline: different wording counts as a contradiction (safe side)
+  if (!hasModel()) return false // offline: different wording counts as a contradiction (safe side)
   return askYesNo(
     'Do these two statements give the same information, without contradicting each other? Answer only yes or no.\n' +
     `Statement 1: ${a}\nStatement 2: ${b}`,
@@ -111,7 +118,7 @@ async function sameAnswer(a: string, b: string): Promise<boolean> {
  * Stops "the next thing anyone said" from being stored as an answer. Offline: yes.
  */
 export async function isReply(question: string, answer: string): Promise<boolean> {
-  if (!useGemini()) return true
+  if (!hasModel()) return true
   try {
     return await askYesNo(
       'Someone asked a question and the next thing another person said is below. ' +
@@ -124,9 +131,76 @@ export async function isReply(question: string, answer: string): Promise<boolean
   }
 }
 
-/** One yes/no check, by VERIFY_PROVIDER. Anything but a clear "yes" (or any error) counts as no. */
+/** One yes/no check, by VERIFY_PROVIDER (Claude when it is the only key). Anything but a clear "yes" (or any error) counts as no. */
 export async function askYesNo(prompt: string): Promise<boolean> {
-  return config.verifyProvider === 'stepfun' ? stepfunYesNo(prompt) : geminiYesNo(prompt)
+  if (config.verifyProvider === 'stepfun') return stepfunYesNo(prompt)
+  if (config.verifyProvider === 'claude' || useClaude()) return claudeYesNo(prompt)
+  return geminiYesNo(prompt)
+}
+
+// Most Claude calls answer in well under a second, a few take more than two. If the first hasn't
+// answered by then, a second identical call goes out and the first reply wins.
+const CLAUDE_HEDGE_AFTER_MS = 700
+
+async function claudeText(prompt: string, maxTokens: number, timeoutMs: number): Promise<string> {
+  if (!config.anthropicApiKey) throw new Error('Claude selected but ANTHROPIC_API_KEY is missing')
+  const done = new AbortController()
+  const signal = AbortSignal.any([done.signal, AbortSignal.timeout(timeoutMs)])
+  const first = claudeRequest(prompt, maxTokens, signal)
+  const second = new Promise<string>((resolve, reject) => {
+    const timer = setTimeout(() => claudeRequest(prompt, maxTokens, signal).then(resolve, reject), CLAUDE_HEDGE_AFTER_MS)
+    first.then(() => clearTimeout(timer), () => undefined)
+  })
+  try {
+    return await Promise.any([first, second])
+  } catch (e) {
+    throw e instanceof AggregateError ? e.errors[0] : e
+  } finally {
+    done.abort() // cancels the slower call
+  }
+}
+
+async function claudeRequest(prompt: string, maxTokens: number, signal: AbortSignal): Promise<string> {
+  const res = await fetch(CLAUDE, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': config.anthropicApiKey, 'anthropic-version': '2023-06-01' },
+    // No temperature: current Claude models reject it. Thinking off: it would spend the few tokens
+    // allowed here (and the deadline) before any answer.
+    body: JSON.stringify({ model: config.claudeModel, max_tokens: maxTokens, thinking: { type: 'disabled' }, messages: [{ role: 'user', content: prompt }] }),
+    signal,
+  })
+  if (!res.ok) throw new Error(`claude ${res.status}: ${(await res.text()).slice(0, 200)}`)
+  const json = (await res.json()) as { content?: { type: string; text?: string }[] }
+  return json.content?.find(c => c.type === 'text')?.text ?? ''
+}
+
+async function claudeYesNo(prompt: string): Promise<boolean> {
+  return /^\s*yes/i.test(await claudeText(prompt, 5, 1500))
+}
+
+/**
+ * Claude in place of embeddings: one call names the stored questions that ask for the same
+ * information as the new one. Only numbers are read back, so a reply can't add anything else.
+ */
+async function claudePick(question: string, records: QARecord[]): Promise<Set<string>> {
+  const oneLine = (t: string) => t.replace(/\s+/g, ' ').trim()
+  const list = records.map((r, i) => `${i + 1}. ${oneLine(r.question!)}`).join('\n')
+  const text = await claudeText(
+    'A person just asked a new question. Below are questions asked earlier today. ' +
+    'Which earlier questions ask for the same information, so that the earlier answer would answer the new question? ' +
+    'Different question words (when vs where), different people, or different days are not the same. ' +
+    'Reply with only their numbers separated by commas, or "none".\n' +
+    `New question: ${oneLine(question)}\nEarlier questions:\n${list}`,
+    30,
+    1800,
+  )
+  const picked = new Set<string>()
+  if (/^\s*none/i.test(text)) return picked
+  for (const m of text.matchAll(/\d+/g)) {
+    const r = records[Number(m[0]) - 1]
+    if (r) picked.add(r.id)
+  }
+  return picked
 }
 
 let lastEmptyWarnAt = 0
@@ -204,6 +278,11 @@ async function decide(question: string, log: MatchLog): Promise<MatchResult | nu
       if (vec) scored.push({ record: r, score: cosine(qVec, vec) })
       else void warm(r)
     }
+  } else if (useClaude()) {
+    // Claude's pick already is the same-question check, so its picks score 1 and skip the double-check.
+    const picked = await claudePick(question, records)
+    scored = records.filter(r => picked.has(r.id)).map(r => ({ record: r, score: 1 }))
+    if (!scored.length) { log.decision = 'no same question'; return null }
   } else {
     const q = localEmbed(question)
     scored = records.map(r => ({ record: r, score: localCosine(q, localEmbed(r.question!)) }))
@@ -225,7 +304,9 @@ async function decide(question: string, log: MatchLog): Promise<MatchResult | nu
   const ranked = [...nearTie, ...candidates.filter(c => !nearTie.includes(c))].slice(0, 3)
 
   // Double-check the top few in parallel; keep the highest-ranked yes.
-  const verdicts = await Promise.all(ranked.map(c => sameQuestion(question, c.record.question!).catch(() => false)))
+  const verdicts = useClaude()
+    ? ranked.map(() => true)
+    : await Promise.all(ranked.map(c => sameQuestion(question, c.record.question!).catch(() => false)))
   const verified = ranked.filter((_, i) => verdicts[i])
   const chosen = verified[0]
   if (!chosen) { log.decision = 'rejected by double-check'; return null }

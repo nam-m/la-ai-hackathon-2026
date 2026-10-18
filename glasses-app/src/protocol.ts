@@ -2,10 +2,18 @@
 // binary frames (raw s16le, 16 kHz, mono, as received from the G2); everything
 // else is a JSON text frame carrying `v: 1`. Change only with C's OK.
 
+/** The glasses' own guess at who is speaking in an audio chunk (AudioEvent.speakerRole). */
+export type SpeakerRole = 'self' | 'other' | 'unknown'
+
+export const isSpeakerRole = (v: unknown): v is SpeakerRole => v === 'self' || v === 'other' || v === 'unknown'
+
 export type ClientMessage =
   | { v: 1; type: 'hello'; session: string; source: 'glasses' | 'phone' }
   | { v: 1; type: 'control'; action: 'pause' | 'resume' }
   | { v: 1; type: 'ping' }
+  // Applies to the audio frames that follow; sent when it changes. The server
+  // uses it to tell the wearer's speech from other people's.
+  | { v: 1; type: 'role'; role: SpeakerRole }
 
 export type Answer = {
   v: 1

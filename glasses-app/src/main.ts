@@ -110,7 +110,7 @@ function handleMicState(state: MicState) {
 }
 
 function handleChunk(event: AudioEvent) {
-  socket.sendAudio(event.audioPcm)
+  socket.sendAudio(event.audioPcm, event.speakerRole)
 
   const level = dbfs(event.audioPcm)
   roles.push(event.speakerRole)

@@ -13,11 +13,19 @@ function hhmm(name: string, fallback: string) {
   return fallback
 }
 
-function verifyProvider(): 'gemini' | 'stepfun' {
+function verifyProvider(): 'gemini' | 'stepfun' | 'claude' {
   const v = env('VERIFY_PROVIDER', 'gemini').trim().toLowerCase()
-  if (v === 'gemini' || v === 'stepfun') return v
-  console.warn(`[config] VERIFY_PROVIDER=${process.env.VERIFY_PROVIDER} is not gemini or stepfun; using gemini`)
+  if (v === 'gemini' || v === 'stepfun' || v === 'claude') return v
+  console.warn(`[config] VERIFY_PROVIDER=${process.env.VERIFY_PROVIDER} is not gemini, stepfun or claude; using gemini`)
   return 'gemini'
+}
+
+/** Who says which utterances are the wearer's: the glasses' speakerRole tags (sent by the phone) or calibrated loudness. */
+function speechRoleSource(): 'glasses' | 'loudness' {
+  const v = env('SPEECH_ROLE_SOURCE', 'glasses').trim().toLowerCase()
+  if (v === 'glasses' || v === 'loudness') return v
+  console.warn(`[config] SPEECH_ROLE_SOURCE=${process.env.SPEECH_ROLE_SOURCE} is not glasses or loudness; using glasses`)
+  return 'glasses'
 }
 
 export const config = {
@@ -30,6 +38,8 @@ export const config = {
   speechProvider: speechOptions.provider,
   speechApiKey: speechOptions.apiKey,
   speechOptions,
+  // glasses: the phone's role tags decide when it sends them, loudness otherwise.
+  speechRoleSource: speechRoleSource(),
   geminiApiKey: env('GEMINI_API_KEY'),
   embedModel: env('EMBED_MODEL', 'gemini-embedding-001'),
   verifyModel: env('VERIFY_MODEL', 'gemini-2.5-flash'),
@@ -38,6 +48,9 @@ export const config = {
   stepfunApiKey: env('STEPFUN_API_KEY'),
   stepfunBaseUrl: env('STEPFUN_BASE_URL', 'https://api.stepfun.ai/v1'), // international; api.stepfun.com for China-region keys
   stepfunModel: env('STEPFUN_MODEL'), // pick a fast chat model from platform.stepfun.com
+  // Claude matcher: without GEMINI_API_KEY it picks repeats itself (it has no embeddings API) and answers the yes/no checks.
+  anthropicApiKey: env('ANTHROPIC_API_KEY'),
+  claudeModel: env('CLAUDE_MODEL', 'claude-haiku-5-5'),
   matchThreshold: Number(env('MATCH_THRESHOLD', '0.80')),
   dataFile: env('DATA_FILE', './data/store.json'),
   toneUrl: env('TONE_URL'), // empty = tone analysis off
@@ -48,6 +61,11 @@ export const config = {
   // /debug/* routes; off when NODE_ENV=production (the Dockerfile sets it).
   debugRoutes: env('NODE_ENV') !== 'production',
 }
+
+/** What finds repeats: Gemini embeddings, else Claude, else the offline word-overlap fallback. */
+export const matcherName = config.geminiApiKey ? 'gemini' : config.anthropicApiKey ? 'claude' : 'local'
+/** What answers the yes/no checks. */
+export const verifierName = config.geminiApiKey ? config.verifyProvider : config.anthropicApiKey ? 'claude' : 'local'
 
 /** D: pass this as webhook_url when starting Creao runs. Creao can't send our Bearer header, so the secret rides here. */
 export const webhookUrl = () => `${config.publicUrl}/creao/webhook?s=${encodeURIComponent(config.webhookSecret)}`

@@ -41,10 +41,13 @@ an `stt_down` error.
 
 ### Use C's server
 
-Put its origin in `.env.local` (see `.env.example`) and restart `npm run dev`:
+Run it from `../server` (`npm run dev`, port 8080; see its README), then point
+the app at it in `.env.local` (see `.env.example`) and restart `npm run dev`.
+The token must match the server's `APP_TOKEN`:
 
 ```bash
-WS_TARGET=wss://<c-server-host>
+WS_TARGET=ws://localhost:8080      # or wss://<c-server-host>
+VITE_APP_TOKEN=<server APP_TOKEN>
 ```
 
 The app keeps talking to same-origin `/ws` and Vite forwards it, so the
@@ -52,6 +55,11 @@ manifest whitelist doesn't matter in dev.
 
 The server must answer every `ping` with a `pong`. After 30 s without hearing
 anything, the app treats the link as dead and reconnects.
+
+Ahead of the audio, the app sends the glasses' own `speakerRole` for it
+(`{"v":1,"type":"role","role":"self"|"other"|"unknown"}`) whenever it changes;
+the server uses it to tell the wearer's questions from other people's answers
+(contract 1 in the Build Guide).
 
 ## On the glasses
 
@@ -94,7 +102,7 @@ for every 100 ms chunk to the laptop. This works only from `npm run dev`.
 Replay a recording to any server as if it came from the glasses:
 
 ```bash
-npm run fake-phone -- --wav dev/recordings/g2-<time>.wav --url ws://localhost:8787/ws [--loop]
+npm run fake-phone -- --wav dev/recordings/g2-<time>.wav --meta dev/recordings/g2-<time>.json --url ws://localhost:8787/ws [--loop]
 ```
 
 ## Files

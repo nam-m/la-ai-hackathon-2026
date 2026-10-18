@@ -48,6 +48,7 @@ URL: `wss://<server>/ws?token=<APP_TOKEN>`. The token only keeps random clients 
 - At most one `answer` per question. `error` codes: `stt_down`, `bad_audio`, `unauthorized`.
 - The phone pings every 15 s and reconnects with backoff of 1, 2, 4, then 10 s.
 - The server closes a connection that sends nothing (no audio, no ping) for 45 s. After reconnecting, the phone sends `hello`, then `pause` again if the wearer had paused.
+- Ahead of the audio, the phone sends the glasses' own guess at who is speaking, `{"v":1,"type":"role","role":"self"|"other"|"unknown"}` (the SDK's `AudioEvent.speakerRole`), whenever it changes and again after each reconnect. It applies to the audio frames that follow. With `SPEECH_ROLE_SOURCE=glasses` (the default) the server labels an utterance `wearer` or `other` when 60% of its tagged audio agrees, `unknown` otherwise, and falls back to loudness where the phone sent no tags. Older servers ignore the message.
 
 ### 2. Speech module (B builds, C hosts)
 

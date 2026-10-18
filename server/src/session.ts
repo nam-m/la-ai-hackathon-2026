@@ -5,6 +5,7 @@ import * as matcher from './matcher.js'
 import * as emotion from './emotion/index.js'
 import { createSpeechModule, type QAPair, type SpeechModule, type SpeechOptions, type Utterance } from './speech/index.js'
 import { PcmRing } from './wav.js'
+import { RoleTimeline, isGlassesRole } from './glasses-role.js'
 import type { PhoneMessage, QARecord, ServerMessage } from './types.js'
 
 export const sessions = new Set<Session>()
@@ -37,6 +38,8 @@ export class Session {
   private name = 'unknown'
   /** Last 60 s of audio, addressed by ms since this session's first audio byte (same clock as Utterance.startMs/endMs). */
   private ring = new PcmRing()
+  /** The glasses' speakerRole tags from the phone, on the ring's clock. */
+  private roles = new RoleTimeline()
   private lastHeard = Date.now() // any audio frame or JSON message (the phone pings every 15 s, even when paused)
   /** Per wearer question (utterance id): the pair check in progress or done, so only the first real reply is saved. */
   private pairChecks = new Map<string, Promise<boolean>>()
@@ -110,6 +113,10 @@ export class Session {
       case 'ping':
         this.send({ v: 1, type: 'pong' })
         break
+      case 'role':
+        // The glasses' speakerRole for the audio frames that follow (sent only when it changes).
+        if (isGlassesRole(msg.role)) this.roles.set(msg.role)
+        break
     }
   }
 
@@ -118,6 +125,7 @@ export class Session {
     if (pcm.length % 2 !== 0 || pcm.length > 320_000) return void this.send({ v: 1, type: 'error', code: 'bad_audio', message: 'Expected complete PCM samples in chunks of at most 10 seconds' })
     if (!pcm.length) return
     this.ring.push(pcm)
+    this.roles.addAudio(pcm.length)
     this.speech.pushAudio(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength))
   }
 
@@ -127,6 +135,8 @@ export class Session {
     try {
       this.speech = this.dependencies.createSpeech({
         ...config.speechOptions,
+        // Who spoke comes from the glasses' own tags when the phone sends them (SPEECH_ROLE_SOURCE=glasses).
+        roleAt: config.speechRoleSource === 'glasses' ? (startMs, endMs) => this.roles.roleAt(startMs, endMs) : undefined,
         onUtterance: u => this.onUtterance(u),
         onWearerQuestion: q => {
           // A matcher/store failure is not a transcription outage: log it, drop this question's

@@ -25,6 +25,11 @@ export type SpeechOptions = {
   wearerSpeaker?: string;
   speakerNames?: Record<string, string>;
   silenceThresholdDb?: number;
+  /**
+   * Role for an utterance from another source on the same audio clock (the glasses' own speakerRole
+   * tags, sent by the phone). It decides before Deepgram labels and loudness; undefined defers to them.
+   */
+  roleAt?(startMs: number, endMs: number): SpeakerRole | undefined;
   hangoverMs?: number;
   fakeScriptPath?: string;
   fakeScript?: FakeLine[];
@@ -166,7 +171,10 @@ export function createSpeechModule(opts: SpeechOptions): ConfigurableSpeechModul
     latestFinalEndMs = Math.max(latestFinalEndMs, range.endMs);
     let role: SpeakerRole = 'unknown';
     if (!raw.uncertain && !outOfOrder && range.rmsDb > (opts.silenceThresholdDb ?? -50)) {
-      if (opts.provider === 'deepgram' && raw.speaker !== null && wearerSpeaker !== undefined) {
+      const tagged = opts.roleAt?.(range.startMs, range.endMs);
+      if (tagged !== undefined) {
+        role = tagged;
+      } else if (opts.provider === 'deepgram' && raw.speaker !== null && wearerSpeaker !== undefined) {
         role = raw.speaker === wearerSpeaker ? 'wearer' : 'other';
       } else if (opts.wearerThresholdDb !== undefined) {
         if (range.rmsDb >= opts.wearerThresholdDb + wearerMarginDb) role = 'wearer';

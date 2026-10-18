@@ -1,7 +1,7 @@
 import http from 'node:http'
 import express, { type NextFunction, type Request, type Response } from 'express'
 import { WebSocketServer } from 'ws'
-import { config } from './config.js'
+import { config, matcherName, verifierName } from './config.js'
 import * as store from './store.js'
 import * as matcher from './matcher.js'
 import * as creao from './creao/index.js'
@@ -40,7 +40,7 @@ const today = () => store.localDate(new Date().toISOString())
 app.get('/health', (_req, res) => {
   res.json({
     ok: true, sessions: sessions.size, records: store.allRecords().length,
-    matcher: config.geminiApiKey ? 'gemini' : 'local', verify: config.geminiApiKey ? config.verifyProvider : 'local', speech: config.speechProvider,
+    matcher: matcherName, verify: verifierName, speech: config.speechProvider,
     tone: emotion.toneStatus(),
   })
 })
@@ -244,8 +244,10 @@ for (const sig of ['SIGTERM', 'SIGINT'] as const) {
 }
 
 server.listen(config.port, () => {
-  console.log(`[server] listening on :${config.port}  matcher=${config.geminiApiKey ? 'gemini' : 'local fallback'}  verify=${config.geminiApiKey ? config.verifyProvider : 'local'}  speech=${config.speechProvider}`)
-  if (config.speechOptions.provider === 'elevenlabs' && config.speechOptions.wearerThresholdDb === undefined)
+  console.log(`[server] listening on :${config.port}  matcher=${matcherName}  verify=${verifierName}  speech=${config.speechProvider}`)
+  if (config.speechRoleSource === 'glasses')
+    console.log('[server] speaker roles from the glasses (phone `role` messages); loudness only where the phone sends none')
+  if (config.speechRoleSource === 'loudness' && config.speechOptions.provider === 'elevenlabs' && config.speechOptions.wearerThresholdDb === undefined)
     console.warn('[server] WARNING: SPEECH_PROVIDER=elevenlabs but SPEECH_WEARER_THRESHOLD_DB is empty; every utterance will be "unknown", so no questions or answers are captured. Run npm run speech:calibrate.')
   if (config.speechOptions.provider === 'deepgram' && config.speechOptions.wearerThresholdDb === undefined && config.speechOptions.wearerSpeaker === undefined)
     console.warn('[server] WARNING: SPEECH_PROVIDER=deepgram with neither SPEECH_WEARER_THRESHOLD_DB nor SPEECH_WEARER_SPEAKER; every utterance will be "unknown". Calibrate a loudness threshold.')
@@ -254,5 +256,5 @@ server.listen(config.port, () => {
   console.log(`[server] tone=${config.toneUrl || 'not configured (set TONE_URL)'}`)
   void emotion.probe()
   scheduleTick()
-  if (!config.geminiApiKey) console.warn('[server] WARNING: no GEMINI_API_KEY. The local matcher is for testing plumbing only and makes wrong matches. Never demo without the key.')
+  if (matcherName === 'local') console.warn('[server] WARNING: no GEMINI_API_KEY or ANTHROPIC_API_KEY. The local matcher is for testing plumbing only and makes wrong matches. Never demo without the key.')
 })

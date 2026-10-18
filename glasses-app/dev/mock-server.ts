@@ -73,6 +73,9 @@ function onText(client: Client, raw: string) {
     case 'ping':
       send(client, { v: 1, type: 'pong' })
       return
+    case 'role':
+      // The glasses' speakerRole for the audio that follows; the mock has no speech to label.
+      return
     case 'control':
       client.paused = msg.action === 'pause'
       log(client, msg.action)
