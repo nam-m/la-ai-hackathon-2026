@@ -1,5 +1,6 @@
 import type { MicState } from './audio'
-import type { GlassesView } from './display'
+import { answerMeta, SEE_PHONE_TEXT, type GlassesView } from './display'
+import type { Answer } from './protocol'
 import type { SocketState } from './socket'
 
 type Actions = {
@@ -15,6 +16,7 @@ export type Phone = ReturnType<typeof mountPhone>
 /**
  * The phone screen, styled after the Even app (Even Realities design
  * guidelines, light theme): a mirror of the glasses for the demo audience,
+ * the last answer in full (the glasses say "See phone" when it is too long),
  * link status, pause, and a debug panel for B's loudness test.
  */
 export function mountPhone(actions: Actions) {
@@ -43,6 +45,12 @@ export function mountPhone(actions: Actions) {
         <button id="show-last" class="button secondary" type="button">Show last</button>
       </div>
       <p id="note" class="note"></p>
+
+      <section id="last" class="card last" aria-label="Last answer">
+        <h2>Last answer</h2>
+        <p id="last-meta" class="last-meta"></p>
+        <p id="last-text" class="last-text empty">None yet</p>
+      </section>
 
       <section class="card">
         <h2>On the glasses</h2>
@@ -77,6 +85,9 @@ export function mountPhone(actions: Actions) {
   const mirrorMeta = el('mirror-meta')
   const mirror = el('mirror')
   const corner = el('corner')
+  const last = el('last')
+  const lastMeta = el('last-meta')
+  const lastText = el('last-text')
   const note = el('note')
   const pause = el<HTMLButtonElement>('pause')
   const record = el<HTMLButtonElement>('record')
@@ -122,6 +133,13 @@ export function mountPhone(actions: Actions) {
       mirror.textContent = view.line || (view.meta ? '' : 'Nothing shown')
       mirror.classList.toggle('empty', !view.line && !view.meta)
       corner.textContent = view.corner
+      last.classList.toggle('attention', view.line === SEE_PHONE_TEXT)
+    },
+    /** The full answer, word for word: what "See phone" on the glasses points to. */
+    setLastAnswer(answer: Answer | null) {
+      lastMeta.textContent = answer ? answerMeta(answer) : ''
+      lastText.textContent = answer ? answer.text : 'None yet'
+      lastText.classList.toggle('empty', !answer)
     },
     setNote(text: string) {
       note.textContent = text
@@ -209,6 +227,12 @@ function injectStyles() {
     .note { margin: 0; font-size: 13px; font-weight: 400; color: var(--tc-2nd); min-height: 1em; }
 
     .card { background: var(--bc-1st); border-radius: var(--radius); padding: var(--space-card); }
+    .last-meta { margin: 0 0 var(--space-same); font-size: 13px; font-weight: 400; color: var(--tc-2nd); }
+    .last-meta:empty { display: none; }
+    .last-text { margin: 0; font-size: 20px; font-weight: 400; line-height: 1.35; word-break: break-word; }
+    .last-text.empty { font-size: 15px; color: var(--tc-2nd); }
+    /* The glasses say "See phone": this card is where to look. */
+    .card.last.attention { background: var(--bc-accent); }
     summary { font-size: 15px; font-weight: 400; cursor: pointer; }
     dl { display: grid; grid-template-columns: auto 1fr; gap: var(--space-same) var(--space-card); margin: 0; }
     dt { color: var(--tc-2nd); font-weight: 400; }

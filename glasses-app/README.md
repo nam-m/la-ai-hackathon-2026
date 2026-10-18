@@ -9,6 +9,10 @@ Sarah · 10:40 AM          (dim)
 Lunch is at noon.
 ```
 
+An answer too long for two lines is never cut, because a cut can drop a
+"not" (spec v4.1). The glasses say "See phone" under the same dim line, and the
+phone's **Last answer** card shows it in full, highlighted.
+
 The protocol is Contract 1 in [`../Build Guide.md`](../Build%20Guide.md);
 `src/protocol.ts` holds its types. The UI follows the
 [Even Realities design guidelines](https://hub.evenrealities.com/docs/build/design-guidelines).
@@ -46,6 +50,9 @@ WS_TARGET=wss://<c-server-host>
 The app keeps talking to same-origin `/ws` and Vite forwards it, so the
 manifest whitelist doesn't matter in dev.
 
+The server must answer every `ping` with a `pong`. After 30 s without hearing
+anything, the app treats the link as dead and reconnects.
+
 ## On the glasses
 
 | Gesture | Does |
@@ -70,8 +77,9 @@ Design notes, from Even's guidelines and display docs:
   dashes and odd spaces for ASCII.
 - Containers are sized for 27 px lines plus padding; text that overflows a
   container by a pixel grows a scrollbar.
-- `ANSWER_MAX_CHARS` caps the answer at two lines; tune it on the real display
-  with the mock's long sample answer.
+- `ANSWER_MAX_CHARS` is about two lines; a longer answer shows "See phone".
+  Tune it on the real display with the mock's long sample answer. Line breaks
+  inside an answer become spaces.
 - The phone screen uses the Even app's light-theme tokens (`TC-1st`, `BC-3rd`,
   6 px radius, 12/16/24 px spacing) in `src/phone.ts`.
 
@@ -99,7 +107,7 @@ npm run fake-phone -- --wav dev/recordings/g2-<time>.wav --url ws://localhost:87
 | `src/display.ts` | Glasses layout, answer formatting, throttled BLE writes |
 | `src/gestures.ts` | Bridge event to gesture mapping |
 | `src/state.ts` | Pause state and last answer, kept across restarts (today only) |
-| `src/phone.ts` | Phone screen: mirror, status, pause, debug panel |
+| `src/phone.ts` | Phone screen: mirror, last answer in full, status, pause, debug panel |
 | `src/debug.ts` | Level meter, speakerRole tally, recording |
 | `dev/mock-server.ts` | Contract 1 mock |
 | `dev/fake-phone.ts` | Streams a WAV to `/ws` like the app does |

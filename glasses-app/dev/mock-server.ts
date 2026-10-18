@@ -13,7 +13,7 @@ const ANSWER_EVERY_MS = 20_000
 const RATE_LOG_MS = 5_000
 
 // Cycles through the display cases: a named speaker, no speaker (the
-// ElevenLabs path), a family fact, and one too long for two lines.
+// ElevenLabs path), a family fact, and one too long for two lines ("See phone").
 const SAMPLES: Array<Pick<Answer, 'text' | 'speaker' | 'source'>> = [
   { text: 'Lunch is at noon.', speaker: 'Sarah', source: 'spoken' },
   { text: 'Your glasses case is on the kitchen table.', speaker: null, source: 'spoken' },

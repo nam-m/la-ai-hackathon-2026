@@ -14,6 +14,8 @@ const RECORD_SECONDS = 30
 let glasses: Glasses | undefined
 let paused = false
 let recording: Recording | null = null
+// Whether the phone note shows a server status, which a lost link makes stale.
+let statusNote = false
 const roles = new RoleWindow()
 
 // Mount the phone UI first so it shows something while the bridge comes up.
@@ -38,6 +40,7 @@ try {
   throw err
 }
 glasses.restore(saved.lastAnswer)
+phone.setLastAnswer(saved.lastAnswer)
 glasses.setPaused(paused)
 phone.setPaused(paused)
 phone.setMic(mic.state, paused)
@@ -69,6 +72,7 @@ function handleServer(msg: ServerMessage) {
   switch (msg.type) {
     case 'answer':
       glasses?.showAnswer(msg)
+      phone.setLastAnswer(msg)
       persist()
       return
     case 'clear':
@@ -76,10 +80,12 @@ function handleServer(msg: ServerMessage) {
       return
     case 'status':
       phone.setNote(`Server: ${msg.text}`)
+      statusNote = true
       return
     case 'error':
       console.warn('[server]', msg.code, msg.message)
       phone.setNote(`Server error ${msg.code}: ${msg.message}`)
+      statusNote = false
       return
     case 'pong':
       return
@@ -89,6 +95,11 @@ function handleServer(msg: ServerMessage) {
 function handleSocketState(state: SocketState) {
   phone.setServer(state)
   glasses?.setConnected(state === 'open')
+  // "Server: Listening" stops being true with the link; an error stays readable.
+  if (state === 'closed' && statusNote) {
+    phone.setNote('')
+    statusNote = false
+  }
   // Every new connection starts out listening on the server side.
   if (state === 'open' && paused) socket.send({ v: 1, type: 'control', action: 'pause' })
 }

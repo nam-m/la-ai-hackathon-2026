@@ -40,10 +40,12 @@ export function parseServerMessage(raw: string): ServerMessage | null {
   switch (fields.type) {
     case 'answer':
       return typeof fields.text === 'string' && typeof fields.at === 'string' ? (msg as Answer) : null
-    case 'clear':
     case 'status':
-    case 'pong':
+      return typeof fields.text === 'string' ? (msg as ServerMessage) : null
     case 'error':
+      return typeof fields.code === 'string' && typeof fields.message === 'string' ? (msg as ServerMessage) : null
+    case 'clear':
+    case 'pong':
       return msg as ServerMessage
     default:
       return null

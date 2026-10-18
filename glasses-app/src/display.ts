@@ -11,6 +11,8 @@ import type { Answer } from './protocol'
 // About two lines of the answer container in the G2 font (not monospaced,
 // ~27 px per line). Tune on the real display with the mock's long answer.
 export const ANSWER_MAX_CHARS = 100
+// Shown instead of an answer longer than that; the phone has it in full.
+export const SEE_PHONE_TEXT = 'See phone'
 const ANSWER_SHOW_MS = 8_000
 // Short drops (server restart, Wi-Fi blip) reconnect within a second or two;
 // only flag an outage that lasts.
@@ -179,21 +181,24 @@ export class Glasses {
 }
 
 /**
- * The answer word for word, under a dim line with who said it and when
- * (Contract 1: without a speaker, only when). Who and when are what make the
- * answer trustworthy, so they never get cut; only an answer too long for two
- * lines is shortened.
+ * The answer word for word, under a dim line with who said it and when. An
+ * answer too long for two lines is never shortened, since any cut can drop a
+ * "not" or half an instruction (spec v4.1): the glasses say "See phone"
+ * instead. Who and when stay either way; they make the answer trustworthy.
  */
 export function answerLines(answer: Answer, max = ANSWER_MAX_CHARS): { meta: string; line: string } {
-  const meta = answer.speaker ? `${answer.speaker} · ${answer.at}` : `Told you at ${answer.at}`
-  return { meta, line: clip(answer.text.trim(), max) }
+  const text = oneLine(answer.text)
+  return { meta: answerMeta(answer), line: glassesSafe(text).length <= max ? text : SEE_PHONE_TEXT }
 }
 
-function clip(text: string, max: number): string {
-  if (text.length <= max) return text
-  const cut = text.slice(0, max - 3)
-  const space = cut.lastIndexOf(' ')
-  return `${space > max / 2 ? cut.slice(0, space) : cut}...`
+/** "Sarah · 10:40 AM", or "Told you at 10:40 AM" without a speaker (Contract 1). */
+export function answerMeta(answer: Answer): string {
+  return oneLine(answer.speaker ? `${answer.speaker} · ${answer.at}` : `Told you at ${answer.at}`)
+}
+
+// Line breaks from the server would need lines the containers don't have.
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
 }
 
 // Code points the G2 firmware font can draw; it silently drops everything

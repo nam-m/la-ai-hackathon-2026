@@ -31,7 +31,13 @@ function recordingsUpload(): Plugin {
     apply: 'serve',
     configureServer(server) {
       server.middlewares.use('/dev/recordings', (req, res) => {
-        const name = path.basename(decodeURIComponent((req.url ?? '').split('?')[0]))
+        let name = ''
+        try {
+          name = path.basename(decodeURIComponent((req.url ?? '').split('?')[0]))
+        } catch {
+          // Malformed escape: falls through to the 400 below. Thrown, it would
+          // reach Vite's error overlay and cover the phone screen.
+        }
         if (req.method !== 'POST' || !/^[\w.-]+\.(wav|json)$/.test(name)) {
           res.statusCode = 400
           res.end('POST /dev/recordings/<name>.wav or .json')
