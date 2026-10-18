@@ -32,6 +32,8 @@ const object = (value: unknown): value is JsonObject =>
 const seconds = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const SAMPLE_MS = 1 / 16;
+// Provider timestamps are rounded; allow this much past the audio actually sent before treating a final as bogus.
+const DRIFT_MS = 20;
 const SENTENCE_END = /[.!?]["'\u201d\u2019)\]}\u00bb]*$/u;
 const ABBREVIATION = /(?:\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Mt|vs|e\.g|i\.e)\.|^(?:[A-Z]\.)+)$/iu;
 
@@ -43,7 +45,7 @@ const ABBREVIATION = /(?:\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Mt|vs|e\.g|i\.e)\.|^(?:
  * https://developers.deepgram.com/docs/audio-keep-alive
  *
  * Only finalized words are accumulated. Provider labels are connection-local;
- * this adapter does not infer names or a wearer, and never reconnects itself.
+ * this adapter does not infer names or a wearer, and never reconnects itself (the speech module reopens it).
  */
 export function createDeepgramProvider(options: DeepgramOptions): SpeechProvider {
   const connectTimeoutMs = options.connectTimeoutMs ?? 10_000;
@@ -191,7 +193,9 @@ export function createDeepgramProvider(options: DeepgramOptions): SpeechProvider
     const tokens: Token[] = [];
     if (Array.isArray(alternative.words) && alternative.words.length > 0) {
       for (const word of alternative.words) {
-        if (!object(word) || !seconds(word.start) || !seconds(word.end) || word.end <= word.start) return null;
+        if (!object(word) || !seconds(word.start) || !seconds(word.end)) return null;
+        // A zero-length (or reversed) word carries no usable audio range; skip it rather than the whole final.
+        if (word.end <= word.start) continue;
         const text = typeof word.punctuated_word === 'string' && word.punctuated_word.trim()
           ? word.punctuated_word.trim()
           : typeof word.word === 'string' ? word.word.trim() : '';
@@ -216,8 +220,8 @@ export function createDeepgramProvider(options: DeepgramOptions): SpeechProvider
     const maxWordEnd = tokens.reduce((end, word) => Math.max(end, word.endMs), -Infinity);
     const endMs = rangeEnd ?? (tokens.length ? maxWordEnd : undefined);
     const sentMs = sentBytes / 32;
-    if (endMs === undefined || !Number.isFinite(endMs) || endMs > sentMs + SAMPLE_MS) return null;
-    if (tokens.some(word => word.startMs >= sentMs || word.endMs > Math.min(endMs, sentMs) + SAMPLE_MS)) return null;
+    if (endMs === undefined || !Number.isFinite(endMs) || endMs > sentMs + DRIFT_MS) return null;
+    if (tokens.some(word => word.startMs >= sentMs || word.endMs > Math.min(endMs, sentMs) + DRIFT_MS)) return null;
     for (const word of tokens) word.endMs = Math.min(word.endMs, sentMs);
     return { tokens, endMs: Math.min(Math.max(endMs, maxWordEnd), sentMs) };
   }
@@ -243,7 +247,8 @@ export function createDeepgramProvider(options: DeepgramOptions): SpeechProvider
     if (message.type !== 'Results' || message.is_final !== true) return;
     if (Array.isArray(message.channel_index) && message.channel_index[0] !== 0) return;
     const final = parseFinal(message);
-    if (!final) { fail('Deepgram returned a malformed final transcript'); return; }
+    // One bad final must not end live transcription: drop it (without logging its text) and keep the connection.
+    if (!final) { console.warn('[speech] Deepgram final dropped: malformed or out-of-range timing'); return; }
     // Exact timing/label deduplication preserves genuinely overlapping words;
     // an end-time high-water filter would silently discard nested intervals.
     const fresh = final.tokens.filter(remember);

@@ -244,6 +244,10 @@ for (const sig of ['SIGTERM', 'SIGINT'] as const) {
 
 server.listen(config.port, () => {
   console.log(`[server] listening on :${config.port}  matcher=${config.geminiApiKey ? 'gemini' : 'local fallback'}  verify=${config.geminiApiKey ? config.verifyProvider : 'local'}  speech=${config.speechProvider}`)
+  if (config.speechOptions.provider === 'elevenlabs' && config.speechOptions.wearerThresholdDb === undefined)
+    console.warn('[server] WARNING: SPEECH_PROVIDER=elevenlabs but SPEECH_WEARER_THRESHOLD_DB is empty; every utterance will be "unknown", so no questions or answers are captured. Run npm run speech:calibrate.')
+  if (config.speechOptions.provider === 'deepgram' && config.speechOptions.wearerThresholdDb === undefined && config.speechOptions.wearerSpeaker === undefined)
+    console.warn('[server] WARNING: SPEECH_PROVIDER=deepgram with neither SPEECH_WEARER_THRESHOLD_DB nor SPEECH_WEARER_SPEAKER; every utterance will be "unknown". Calibrate a loudness threshold.')
   if (config.geminiApiKey && config.verifyProvider === 'stepfun' && (!config.stepfunApiKey || !config.stepfunModel))
     console.warn('[server] WARNING: VERIFY_PROVIDER=stepfun but STEPFUN_API_KEY or STEPFUN_MODEL is missing; every yes/no check will fail, so nothing will be answered.')
   console.log(`[server] tone=${config.toneUrl || 'not configured (set TONE_URL)'}`)

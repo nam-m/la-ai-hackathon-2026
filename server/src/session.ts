@@ -129,8 +129,11 @@ export class Session {
         ...config.speechOptions,
         onUtterance: u => this.onUtterance(u),
         onWearerQuestion: q => {
-          void this.onQuestion(q).catch(() => {
-            if (this.latestQuestionId === q.id) this.speechError()
+          // A matcher/store failure is not a transcription outage: log it, drop this question's
+          // window, and keep listening instead of telling the phone transcription is down.
+          void this.onQuestion(q).catch(e => {
+            console.warn(`[match ${this.name}] question handling failed: ${(e as Error).message}`)
+            if (this.latestQuestionId === q.id) this.invalidateWindow()
           })
         },
         onPair: p => this.onPair(p),

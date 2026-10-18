@@ -207,3 +207,20 @@ test('pause before hello does not open a speech connection until deliberate resu
   phone.json({ v: 1, type: 'control', action: 'resume' });
   assert.equal(created, 1);
 });
+
+test('a matcher failure is not reported as a transcription outage and drops only that question', async t => {
+  const saved: string[] = [];
+  const h = harness(t, {
+    findMatch: async () => { throw new Error('store exploded'); },
+    isReply: async (_q, a) => { saved.push(a); return true; },
+  });
+  const q = utterance('matcher-failure-question', 'wearer', 0);
+  h.speech.onWearerQuestion(q);
+  await settle();
+  assert.equal(h.phone.sent.some(m => m.type === 'error' && m.code === 'stt_down'), false);
+  // The failed question's answer window is closed, so a later reply isn't saved against it.
+  h.speech.onPair({ question: q, answer: utterance('Lunch is at noon.', 'other', 500) });
+  await settle();
+  assert.deepEqual(saved, []);
+  assert.equal(store.todaysSpokenPairs().some(r => r.question === q.text), false);
+});
