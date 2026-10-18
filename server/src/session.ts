@@ -83,8 +83,8 @@ export class Session {
         session: () => this.name,
         embed: dependencies.embedVoice ?? voiceClient.embed,
         extractName: dependencies.extractName ?? extractName,
-        clip: (startMs, endMs) => this.ring.get(startMs, endMs),
-        send: msg => { if (!this.closed && !this.paused) this.send(msg) },
+        clip: (startMs, endMs) => this.ring.get(Math.max(0, startMs), Math.min(endMs, this.ring.receivedMs)),
+        send: msg => !this.closed && !this.paused && this.send(msg),
       })
     }
     ws.on('message', (data, isBinary) => {

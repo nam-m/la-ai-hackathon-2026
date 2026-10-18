@@ -14,7 +14,7 @@ export const MIN_CONFIDENCE = 0.6
 // Capitalized words that are not names (sentence starts are skipped anyway).
 const NOT_NAMES = new Set(('I I\'m I\'ll I\'ve I\'d OK Okay Oh Mom Dad Mum Grandma Grandpa Doctor Dr Mr Mrs Ms Sir Madam God Lord ' +
   'Monday Tuesday Wednesday Thursday Friday Saturday Sunday January February March April May June July August September ' +
-  'October November December Christmas Easter English TV Hi Hello Hey Yes No Thanks Sorry Please Good Fine Well').split(' '))
+  'October November December Christmas Easter English TV Hi Hello Hey Yes No Thanks Sorry Please Good Fine Well Uh Um Huh Hmm Ah Wow').split(' '))
 const ASKS_NAME = /\b(your name|who are you|who is this|who's this|remind me who)\b/i
 const INTRO = /\b(my name|call me|i'm|i am|this is|it's|it is|name's)\b/i
 
@@ -81,7 +81,7 @@ export async function extractName(lines: NameLine[]): Promise<NameFinding | null
   if (!config.anthropicApiKey) return patternName(lines)
   // Room for a sentence of reasoning before the JSON: it sometimes writes one despite being asked not to.
   const raw = await claudeText(prompt(lines), 300, 6000)
-  const json = /\{[\s\S]*\}/.exec(raw)?.[0]
+  const json = /\{[\s\S]*?\}/.exec(raw)?.[0] // the first object: Haiku sometimes adds a second one
   if (!json) return null
   const r = JSON.parse(json) as { name?: unknown; kind?: unknown; confidence?: unknown }
   if (typeof r.name !== 'string' || !r.name.trim() || !KINDS.includes(r.kind as NameKind)) return null

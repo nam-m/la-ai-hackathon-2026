@@ -10,6 +10,8 @@ import { MIN_CONFIDENCE, mightHaveName, type NameFinding, type NameLine } from '
 
 const TURN_GAP_MS = 1500 // other-lines closer than this (with no wearer line between) are one person's turn
 const TURN_WINDOW_MS = 6000 // newest audio of the turn used per check
+const PAD_MS = 300 // speech timestamps hug the words; a little either side gives the short lines more voice
+const RECENT_MS = 30_000 // the person who just talked to the wearer stays the likely one across the wearer's replies
 const MIN_CLIP_MS = 700
 const SHORT_SEC = 1.0 // under this much speech, only a strong match counts and no new voice is made
 const WEARER_MIN_MS = 1500 // wearer lines at least this long teach the wearer's own voice
@@ -18,7 +20,7 @@ const ADDRESSED_AFTER_MS = 15_000 // "Hi Tom!": otherwise the next other turn st
 const SPEAKER_REPEAT_MS = 3000 // the same name goes to the glasses at most this often
 const CONTEXT_LINES = 6
 
-export type VoiceEventKind = 'heard' | 'unknown' | 'new_voice' | 'learned' | 'wearer' | 'wearer_like' | 'too_short'
+export type VoiceEventKind = 'heard' | 'shown' | 'unknown' | 'new_voice' | 'learned' | 'wearer' | 'wearer_like' | 'too_short'
   | 'no_name' | 'name_found' | 'named' | 'rejected' | 'name_lost' | 'error'
 export type VoiceEvent = {
   at: string
@@ -60,7 +62,7 @@ export type TrackerDeps = {
   extractName: (lines: NameLine[]) => Promise<NameFinding | null>
   /** Audio on the utterance clock, or null if it has rolled off. */
   clip: (startMs: number, endMs: number) => Uint8Array | null
-  send: (msg: ServerMessage) => void
+  send: (msg: ServerMessage) => boolean | void
   gallery?: Gallery
 }
 
@@ -82,6 +84,7 @@ export class VoiceTracker {
   private lastTurn: Turn | null = null
   private addressed: (PendingName & { untilMs: number }) | null = null
   private current: string | null = null // voice of the ongoing turn: it keeps the label down to threshold - STICKY
+  private recent: { voiceId: string; atMs: number } | null = null // last recognized voice, on the utterance clock
   private results = new Map<string, { turn: Turn; job: Promise<string | null> }>() // utterance id -> its voice check
   private context: { role: NameLine['role']; text: string; turn: Turn | null }[] = []
   private lastSpeaker = { name: '', at: 0 }
@@ -180,7 +183,7 @@ export class VoiceTracker {
   }
 
   private async identify(turn: Turn, u: Utterance, transcriptId: string): Promise<string | null> {
-    const clip = this.deps.clip(Math.max(turn.startMs, u.endMs - TURN_WINDOW_MS), u.endMs)
+    const clip = this.deps.clip(Math.max(turn.startMs, u.endMs - TURN_WINDOW_MS) - PAD_MS, u.endMs + PAD_MS)
     if (!clip || clip.byteLength < MIN_CLIP_MS * 32) {
       this.log({ kind: 'too_short', text: u.text, seconds: +((clip?.byteLength ?? 0) / 32_000).toFixed(1) })
       return null
@@ -192,9 +195,12 @@ export class VoiceTracker {
       return null
     }
     const g = this.gallery
-    const id = g.identify(r.print.whole, this.current)
+    // In a conversation the wearer and one visitor take turns: whoever talked within 30 s keeps the lower bar
+    // through the wearer's replies, and a short line from them needs only the normal bar.
+    const recent = this.recent && u.startMs - this.recent.atMs < RECENT_MS ? this.gallery.get(this.recent.voiceId)?.id ?? null : null
+    const id = g.identify(r.print.whole, this.current ?? recent)
     const short = r.print.seconds < SHORT_SEC
-    if (short && id.id && id.score < g.threshold + VOICE.STRONG) id.id = null
+    if (short && id.id && id.score < g.threshold + (id.id === recent ? 0 : VOICE.STRONG)) id.id = null
     const base = { text: u.text, score: id.score, scores: id.scores, wearer: id.wearer, seconds: r.print.seconds, ms: r.print.ms }
     this.live = { at: new Date().toISOString(), voiceId: id.id, voice: this.label(id.id), score: id.score, scores: id.scores, wearer: id.wearer }
     if (id.wearerLike) {
@@ -218,6 +224,7 @@ export class VoiceTracker {
     }
     if (!voiceId) return null
     this.current = voiceId
+    this.recent = { voiceId, atMs: u.endMs }
     turn.voiceId = voiceId
     for (const callback of turn.callbacks.splice(0)) this.onNamed(voiceId, callback)
     if (turn.pendingName) {
@@ -237,7 +244,8 @@ export class VoiceTracker {
     const now = Date.now()
     if (name === this.lastSpeaker.name && now - this.lastSpeaker.at < SPEAKER_REPEAT_MS) return
     this.lastSpeaker = { name, at: now }
-    this.deps.send({ v: 1, type: 'speaker', name, score })
+    const sent = this.deps.send({ v: 1, type: 'speaker', name, score })
+    this.log({ kind: 'shown', voice: name, score, detail: sent === false ? 'NOT sent: glasses not connected or paused' : 'sent to the glasses' })
   }
 
   private async learnWearer(u: Utterance) {

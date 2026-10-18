@@ -9,7 +9,7 @@ export const VOICE = {
   ONE_VOICE: 0.50, // halves of one person's speech score above this (LibriSpeech: same >= 0.60, two people <= 0.32)
   MIN_SAME: 0.30, // a voice less like a named person than this is someone else with the same name
   REDUNDANT: 0.85, // a sample this close to the kept ones adds nothing
-  STRONG: 0.10, // a match this far above the threshold may add a sample
+  STRONG: 0.05, // a match this far above the threshold may add a sample (0.10 never let G2 far-field audio teach anything)
   MIN_SAMPLE_SEC: 3, // speech needed for a new voice or a new sample
   MAX_SAMPLES: 10,
   MAX_UNNAMED: 20,
