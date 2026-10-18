@@ -85,19 +85,19 @@ One owner per layer, so nobody blocks anybody. Replace the role names with your 
 | C: Server and matching | Our server, the Q&A store, repeat matching with the yes/no double-check, answer delivery | Correct answers to repeats in under 2 s, nothing for look-alikes |
 | D: Creao | Creao app and dashboard, the three agents, webhook handler, facts to the server | Family facts reach the glasses; dashboard shows log and summary |
 
-No one owns product work during the build. Pitch, demo, judge answers and Devpost happen together from 9:30 AM Sunday.
+No one owns product work during the build. Pitch, demo, judge answers and Devpost happen together from 11 AM Sunday.
 
 A and B sit together for the loudness test; B and C agree on the speech module's interface by 8 PM; C and D agree on the webhook and facts endpoints by 7 PM. The build guide has each person's steps.
 
 ## Timeline
 
-Feature freeze is 9:30 AM Sunday; submissions close at noon. Every phase ends with something that works end to end.
+Feature freeze is 11 AM Sunday (moved from 9:30 AM; the steps after it have no fixed times, we do them as we go); submissions close at noon. Every phase ends with something that works end to end.
 
 1. **Sat 4–8 PM: Hello, glasses.** Template running on the G2, loudness test done and transcription service chosen by 6 PM, live transcript reaching the server, our server answering a test call from the phone. The Even table closes at 8 PM, so solve hardware problems before then.
 2. **Sat 8 PM–2 AM: The core loop.** Q&A capture, repeat matching, the one-line answer on the glasses. Milestone: a repeated question shows its earlier answer.
 3. **Sun 2–6 AM: The family side.** Log and summary agent running; caregiver facts sync from Creao to the server and reach the glasses. Sleep in shifts.
-4. **Sun 6–9:30 AM: Polish.** Patterns agent, timing, display wording, edge cases (no answer, stale answer, noise).
-5. **Sun 9:30 AM–12 PM: Ship, all four together.** Package and upload the EvenHub Beta, install it from Beta and test, finish Devpost, rehearse the demo three times.
+4. **Sun 6–11 AM: Polish.** Patterns agent, timing, display wording, edge cases (no answer, stale answer, noise).
+5. **Sun 11 AM–12 PM: Ship, all four together.** Package and upload the EvenHub Beta, install it from Beta and test, finish Devpost, rehearse the demo three times.
 
 ## Tasks
 
@@ -141,7 +141,7 @@ Tick tasks off as you finish them. Times are deadlines, not start times. Sub-tas
   - [ ] Lock the phone for 5 minutes, unlock: listening restarts
   - [ ] Denied mic permission shows a clear message
   - [ ] Double-tap exit from the root page works
-- [ ] Ship the Beta, Sun 11 AM
+- [ ] Ship the Beta
   - [ ] Package the .ehpk and upload it; Beta group with the phone account
   - [ ] Install from Beta (Me, then Beta tester) and rerun the whole demo
 
@@ -203,14 +203,14 @@ Tick tasks off as you finish them. Times are deadlines, not start times. Sub-tas
 - [ ] Patterns agent (should have), Sun 7 AM
 - [ ] Reminders agent (stretch, only if everything else works), Sun 9 AM
 
-### Together, Sun 9:30 AM to noon
+### Together, Sun 11 AM to noon
 
 - [ ] A packages and uploads the Beta first, then joins
-- [ ] Bug bash: everyone runs the full demo on the real G2, 10 AM
-- [ ] Pitch with a named user, 10:15 AM
-- [ ] Demo setup: D enters the caregiver facts; assign Grandma, Sarah and narrator, 10:45 AM
+- [ ] Bug bash: everyone runs the full demo on the real G2
+- [ ] Pitch with a named user
+- [ ] Demo setup: D enters the caregiver facts; assign Grandma, Sarah and narrator
 - [ ] Everyone learns the four judge answers (build guide, Together at the end)
-- [ ] Devpost: B story, C diagram and screenshots, A backup video, D selects challenges, 11:30 AM
+- [ ] Devpost: B story, C diagram and screenshots, A backup video, D selects challenges
 - [ ] Rehearse the demo three times, 11:45 AM
 - [ ] Return the G2 after judging
 
