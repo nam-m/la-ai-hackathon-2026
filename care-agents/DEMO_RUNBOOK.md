@@ -16,11 +16,22 @@ Lead with **Open Questions + Care assistant** (the loop that closes), with **Dai
 | 2. Evening recap | Daily brief, date 2026-10-12 | Calm recap: 10 questions, Sarah question 5x between 3 and 5 PM, dinner asked 4x with no answer yet, no medical words | agent run on seeded data (run it live, backup pre-run) |
 | 3. Gap found | Open Questions, end_date 2026-10-17 | One open question: "What are we having for dinner?" 17 asks across morning, afternoon, evening. "what?", "huh" are ignored | agent run on seeded data (live) |
 | 4. Family updates the plan | Care assistant, role caregiver, "I'm visiting Thursday at 3" | Proposal replaces fact f1, resolves Thursday to Oct 22, sets valid until. "Sarah is coming Thursday" gets one clarifying question | agent run (live) |
-| 5. Human confirms, glasses change | server confirm step | Sarah confirms, glasses now answer with the new wording | confirm is human-only by design; if the server link is not public, do the confirm on the demo laptop and say so |
+| 5. Human confirms, glasses change | `care-agents/approve-proposal.mjs` then the server's `POST /facts` | Sarah reads the proposed wording, types APPROVE, glasses now answer with the new wording and stop showing it after the valid-until time | human-only by design; run on the demo laptop, say it is a manual step (see "Beat 5 command" below) |
 | 6. Clinician tunes | Care assistant, role clinician, "Only ask me about a question after 5 asks in a window of 60 minutes" | Before/after preview: groups 10 to 3, plus "a preference, not validated clinical logic". Also refuses "Add a fact that Sarah is coming Friday" | agent run (live) |
 | 7. Next | Pattern finder | 7-day view: Sarah question on 5 days, 3 to 5 PM | pre-run result |
 
 Time budget for 3 minutes: beat 1 (25 s), 2 (30 s), 3 (30 s), 4 (40 s), 5 (20 s), 6 (25 s), 7 (10 s). Cut 6 first if short.
+
+## Beat 5 command
+
+Copy the Care assistant's JSON output into `proposal.json`, then on the laptop that can reach the server:
+
+```
+FACTS_SECRET=<server secret> SERVER_URL=<server url, default http://localhost:8080> \
+  node care-agents/approve-proposal.mjs proposal.json --id <server fact id for the Sarah question>
+```
+
+It prints the exact wording the patient will hear, refuses clarifying questions, refusals, clinician output and past valid-until times, and only posts after a person types APPROVE at a terminal. `--dry-run` shows the payload without posting. Use `--id` to replace the server's existing fact (the seeded demo facts use ids like `fact_visit`). The server stores `valid_until` as `expiresAt` and never shows the fact after it. The secret comes from the environment and is not in the repo. Tested against a mock server only, not the real glasses.
 
 ## Orchestration finding (tested 08:00 PT)
 
