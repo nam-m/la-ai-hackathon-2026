@@ -50,6 +50,10 @@ With `SPEECH_PROVIDER=fake`, the server replays `scripts/fake-script.txt` as if 
 | `GET`/`POST /settings` | `Bearer FACTS_SECRET` | `{"toneAnalysis": true\|false}` |
 | `POST /creao/webhook?s=WEBHOOK_SECRET` | secret in the URL (`webhookUrl()` in `config.ts`), separate from `FACTS_SECRET`; D's handler also verifies run IDs | Creao run results |
 | `POST /creao/summary` | `Bearer FACTS_SECRET` | Trigger the end-of-day summary by hand in the demo |
+| `POST /creao/patterns`, `POST /creao/open-questions` | `Bearer FACTS_SECRET` | Start Pattern finder / Open Questions over the last 7 days; returns `{runId}` at once (a run takes about a minute). `409` while the same agent is already running |
+| `GET /creao/patterns/today`, `GET /creao/open-questions/today` | `Bearer FACTS_SECRET` | The saved result, or `null` until a run finishes |
+| `POST /creao/care` | `Bearer FACTS_SECRET` | `{"role":"caregiver"\|"clinician","request":"..."}` starts the Care assistant; returns `{runId}`. It only proposes |
+| `GET /creao/care/:runId` | `Bearer FACTS_SECRET` | `{status:"running"\|"done"\|"failed", result?, error?}`. On `done`, `result.proposal` is the wording a person approves; the family app then posts it to `POST /facts` |
 | `POST /demo/reset` | `Bearer FACTS_SECRET` | Replace the demo day with a fresh one. Only served with `DEMO_DATA=1` |
 | `POST /debug/match` | `Bearer FACTS_SECRET` | `{"question":"..."}` → what the matcher would answer, with its score. Not served when `NODE_ENV=production` (the Dockerfile sets it) |
 
@@ -59,7 +63,7 @@ With `SPEECH_PROVIDER=fake`, the server replays `scripts/fake-script.txt` as if 
 - **Creao log:** every 5 minutes, `submitLog` with new transcript, pairs, questions and tone (window ends 15 s ago).
 - **Summary and patterns:** `runSummary` at `SUMMARY_AT` (20:00) and `runPatterns` at `PATTERNS_AT` (23:30), wearer's local time, once a day, within 15 minutes after the time (a server started later doesn't fire them). The window doesn't cross midnight, so keep both at 23:45 or earlier. A missed or failed run isn't retried; use `POST /creao/summary`.
 - **Reminders:** sent to listening phones within 5 minutes of `remindAt`, otherwise marked `missed`; the status shows in `/log/today`. No backlog after a reconnect.
-- **Demo day:** with `DEMO_DATA=1`, `src/demo.ts` seeds a realistic morning (`demo_` ids, times relative to now) at startup and again once the date turns over; starting with it off removes any demo day left in the store. Its facts and spoken answers are live, so the glasses answer from them too ("Where is Mary?"; lunch is at noon in both the spoken answer and the family note, so a live "noon" is answered). Real asks, facts and summaries add to it; it's never sent to Creao.
+- **Demo day:** with `DEMO_DATA=1`, `src/demo.ts` seeds a realistic morning (`demo_` ids, times relative to now) at startup and again once the date turns over; starting with it off removes any demo day left in the store. Its facts and spoken answers are live, so the glasses answer from them too ("Where is Mary?"; lunch is at noon in both the spoken answer and the family note, so a live "noon" is answered). Real asks, facts and summaries add to it. The agent runs (summary, patterns, open questions, care) include it, so a summary generated in the demo describes the demo day; the 5-minute log never sends it.
 - **Tone health check:** every 30 s while tone is on, so `/health` shows an outage (`degraded`, then `unreachable` after 3 failed checks) and a recovery within about 30 s, even with no questions coming in. Logs only on changes.
 
 ## Tuning the matcher

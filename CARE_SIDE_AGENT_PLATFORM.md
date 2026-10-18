@@ -182,7 +182,7 @@ flowchart TD
   S4["4. Run evals<br/>Seeded days, deterministic checks, eval table<br/>Owner: CREAO lead (part D)"]
   S5["5. Publish and wire<br/>Pin versions, scheduled runs, caregiver handoff, caregiver page<br/>Owner: CREAO lead (part D)"]
   SX["+ Stretch: StepFun verifier<br/>Only if steps 1 to 5 pass early; cut first<br/>Owner: whoever is free"]
-  G{"Gate: feature freeze, Sun 11 AM<br/>Agents pass evals and one full scheduled run is on record"}
+  G{"Gate: before submission, Sun noon<br/>Agents pass evals and one full scheduled run is on record"}
   R["6. README and demo<br/>Agent IDs, run share link, diagram, eval table; submit by noon<br/>Owner: whole team"]
   S1 --> S2 --> S3 --> S4 --> S5 --> G --> R
   S5 -.-> SX -.-> G
@@ -240,7 +240,7 @@ These questions need an answer from the team before the agents are final; the ro
 
 - [ ] Can a CREAO agent call our server's tools from its sandbox, or do we use webhooks only? (10-minute test)
 - [ ] Who on the team owns the CREAO agents, the eval harness and the server endpoints?
-- [ ] Do we add the unanswered flag and POST /proposals before the freeze, or demo Open Questions against a seeded queue?
+- [ ] Do we add the unanswered flag and POST /proposals before submission, or demo Open Questions against a seeded queue?
 - [ ] Do we attempt the StepFun verifier, and who does it if the core agents are done early?
 - [x] Main user: the patient in the early stage of dementia or Alzheimer's; caregivers and clinicians are the supporting users. Pitch wording comes later.
 - [ ] Does the caregiver page live in the CREAO dashboard, or on our own server page? (decided by the 10-minute test)

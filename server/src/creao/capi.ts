@@ -72,19 +72,24 @@ export async function waitForRun(agent: AgentName, runId: string, opts: { interv
 
 /**
  * The agent's JSON object out of a finished run. result.text is a JSON string, sometimes wrapped as {"response": "..."}
- * (an agent that needs input answers that way), and the object may sit inside prose. Returns null when there is none.
+ * (an agent that needs input answers that way), and the object may sit inside prose. Some agents put only their
+ * script's stats in text and the real object (with schema_version) in a ```json block in chatText, so both are read
+ * and the first object with schema_version wins. Returns null when there is no object at all.
  */
 export function parseAgentJson(run: RunInfo): Record<string, unknown> | null {
-  const text = run.result?.text ?? run.result?.chatText ?? ''
   const tryParse = (s: string): unknown => { try { return JSON.parse(s) } catch { return undefined } }
+  const asObject = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null)
   const objectIn = (s: string): Record<string, unknown> | null => {
-    const direct = tryParse(s)
-    if (direct && typeof direct === 'object' && !Array.isArray(direct)) return direct as Record<string, unknown>
+    const direct = asObject(tryParse(s))
+    if (direct) return direct
+    const blocks = [...s.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)].map(m => asObject(tryParse(m[1])))
+    const fenced = blocks.find(b => b && 'schema_version' in b) ?? blocks.find(Boolean)
+    if (fenced) return fenced
     const a = s.indexOf('{'), b = s.lastIndexOf('}')
-    const inner = a >= 0 && b > a ? tryParse(s.slice(a, b + 1)) : undefined
-    return inner && typeof inner === 'object' && !Array.isArray(inner) ? (inner as Record<string, unknown>) : null
+    return a >= 0 && b > a ? asObject(tryParse(s.slice(a, b + 1))) : null
   }
-  const top = objectIn(text)
-  if (top && typeof top.response === 'string' && !('schema_version' in top)) return objectIn(top.response) ?? null
-  return top
+  const unwrap = (o: Record<string, unknown> | null) =>
+    o && typeof o.response === 'string' && !('schema_version' in o) ? objectIn(o.response) : o
+  const found = [run.result?.text, run.result?.chatText].map(t => (t ? unwrap(objectIn(t)) : null))
+  return found.find(o => o && 'schema_version' in o) ?? found.find(Boolean) ?? null
 }

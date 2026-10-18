@@ -171,9 +171,45 @@ app.post('/creao/summary', requireSecret, async (_req, res) => {
     const runId = await creao.runSummary(today())
     res.json({ runId })
   } catch (e) {
-    console.warn('[creao] runSummary failed', (e as Error).message)
-    res.status(502).json({ error: (e as Error).message })
+    startFailure(res, 'runSummary', e)
   }
+})
+
+// Family app: the other CREAO agents. Each POST starts a run and returns at once (a run takes about a minute);
+// the result is read from the GET. A second start while one is running is refused with 409.
+const startFailure = (res: express.Response, name: string, e: unknown) => {
+  const message = (e as Error).message
+  console.warn(`[creao] ${name} failed`, message)
+  res.status(/already running/.test(message) ? 409 : 502).json({ error: message })
+}
+
+app.post('/creao/patterns', requireSecret, async (_req, res) => {
+  try { res.json({ runId: await creao.runPatterns(today()) }) } catch (e) { startFailure(res, 'runPatterns', e) }
+})
+app.get('/creao/patterns/today', requireSecret, (_req, res) => {
+  res.json({ v: 1, patterns: store.getDay(today())?.patterns ?? null })
+})
+
+app.post('/creao/open-questions', requireSecret, async (_req, res) => {
+  try { res.json({ runId: await creao.runOpenQuestions(today()) }) } catch (e) { startFailure(res, 'runOpenQuestions', e) }
+})
+app.get('/creao/open-questions/today', requireSecret, (_req, res) => {
+  res.json({ v: 1, openQuestions: store.getDay(today())?.openQuestions ?? null })
+})
+
+// Care assistant: {role: "caregiver" | "clinician", request}. It only proposes; nothing is saved until a person
+// approves and the family app posts the fact to POST /facts.
+app.post('/creao/care', requireSecret, async (req, res) => {
+  const role = req.body?.role
+  const request = typeof req.body?.request === 'string' ? req.body.request.trim() : ''
+  if (role !== 'caregiver' && role !== 'clinician') return void res.status(400).json({ error: 'role must be caregiver or clinician' })
+  if (!request || request.length > 1000) return void res.status(400).json({ error: 'request must be 1 to 1000 characters' })
+  try { res.json({ runId: await creao.runCare(role, request, today()) }) } catch (e) { startFailure(res, 'runCare', e) }
+})
+app.get('/creao/care/:runId', requireSecret, (req, res) => {
+  const out = creao.careResult(req.params.runId)
+  if (!out) return void res.status(404).json({ error: 'unknown run' })
+  res.json({ v: 1, ...out })
 })
 
 // Demo helper: replace the demo day with a fresh one, e.g. right before presenting. Only with DEMO_DATA=1.
@@ -267,6 +303,18 @@ function scheduleTick() {
   }
 }
 setInterval(scheduleTick, 60_000)
+
+// Open Questions by itself: every OPEN_QUESTIONS_EVERY_MIN minutes, only when real questions came in since the last
+// run, so a quiet day spends no credits. A run that is refused (one already running) or fails is logged, not retried.
+if (config.openQuestionsEveryMin > 0) {
+  let lastOpenQuestionsAt = new Date().toISOString()
+  setInterval(() => {
+    const { events } = store.between(lastOpenQuestionsAt, '~')
+    if (!events.some(e => !demo.isDemo(e.id))) return
+    lastOpenQuestionsAt = new Date().toISOString()
+    creao.runOpenQuestions(today()).then(id => console.log(`[creao] open questions run ${id}`), e => console.warn('[creao] open questions run failed', (e as Error).message))
+  }, config.openQuestionsEveryMin * 60_000)
+}
 
 // Idle check: close phones that sent nothing (no audio, no ping) for 45 s, so their speech streams close.
 const MAX_IDLE_MS = 45_000
