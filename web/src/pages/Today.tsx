@@ -148,7 +148,8 @@ function SummaryCard({ summary, guard, onSummary }: { summary: DaySummary | null
   const [waiting, setWaiting] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   const alive = useRef(true)
-  useEffect(() => () => { alive.current = false }, [])
+  // Set it again on mount: React's dev StrictMode unmounts and remounts once, which would leave it false.
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   const text = summaryText(summary)
 
   async function generate() {
