@@ -50,6 +50,10 @@ With `SPEECH_PROVIDER=fake`, the server replays `scripts/fake-script.txt` as if 
 | `GET`/`POST /settings` | `Bearer FACTS_SECRET` | `{"toneAnalysis": true\|false}` |
 | `POST /creao/webhook?s=WEBHOOK_SECRET` | secret in the URL (`webhookUrl()` in `config.ts`), separate from `FACTS_SECRET`; D's handler also verifies run IDs | Creao run results |
 | `POST /creao/summary` | `Bearer FACTS_SECRET` | Trigger the end-of-day summary by hand in the demo |
+| `POST /creao/patterns`, `POST /creao/open-questions` | `Bearer FACTS_SECRET` | Start Pattern finder / Open Questions over the last 7 days; returns `{runId}` at once (a run takes about a minute). `409` while the same agent is already running |
+| `GET /creao/patterns/today`, `GET /creao/open-questions/today` | `Bearer FACTS_SECRET` | The saved result, or `null` until a run finishes |
+| `POST /creao/care` | `Bearer FACTS_SECRET` | `{"role":"caregiver"\|"clinician","request":"..."}` starts the Care assistant; returns `{runId}`. It only proposes |
+| `GET /creao/care/:runId` | `Bearer FACTS_SECRET` | `{status:"running"\|"done"\|"failed", result?, error?}`. On `done`, `result.proposal` is the wording a person approves; the family app then posts it to `POST /facts` |
 | `POST /demo/reset` | `Bearer FACTS_SECRET` | Replace the demo day with a fresh one. Only served with `DEMO_DATA=1` |
 | `POST /debug/match` | `Bearer FACTS_SECRET` | `{"question":"..."}` → what the matcher would answer, with its score. Not served when `NODE_ENV=production` (the Dockerfile sets it) |
 

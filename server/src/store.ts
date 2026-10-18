@@ -9,7 +9,7 @@ import type { DaySummary, LogEntry, PatternsReport, QARecord, QuestionEvent, Run
  * Also keeps today's transcript, question events and tone records for the dashboard and Creao,
  * what Creao sends back (per-day log, summary, patterns) and the run ID -> kind registry.
  */
-type Day = { log: LogEntry[]; summary?: DaySummary; patterns?: PatternsReport }
+type Day = { log: LogEntry[]; summary?: DaySummary; patterns?: PatternsReport; openQuestions?: Record<string, unknown> }
 type StoreFile = {
   records: QARecord[]
   embeddings: Record<string, number[]>
@@ -207,6 +207,7 @@ export function savePatterns(report: PatternsReport) {
   day(covered).patterns = report
   scheduleSave()
 }
+export function saveOpenQuestions(date: string, result: Record<string, unknown>) { day(date).openQuestions = result; scheduleSave() }
 export const getDay = (date: string) => data.days[date]
 
 /** D's RunKindRegistry: run ID -> kind, persisted so callbacks after a restart still route. */
