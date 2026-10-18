@@ -11,10 +11,18 @@
       "desc": "Listens through the glasses mics so Rewind can show answers your family already gave."
     },
     {
+      "name": "location",
+      "desc": "Tells the wearer where they are when they ask \"Where am I?\"."
+    },
+    {
       "name": "network",
       "desc": "Streams audio to the Rewind server and receives answers to show on the glasses.",
-      "whitelist": ["wss://rewind-server.example.com"]
+      "whitelist": [
+        "wss://rewind-server.example.com"
+      ]
     }
   ],
-  "supported_languages": ["en"]
+  "supported_languages": [
+    "en"
+  ]
 }

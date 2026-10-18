@@ -5,7 +5,7 @@
 // --meta replays the glasses' speakerRole from the recording's .json as the app would.
 //
 //   npm run fake-phone -- --wav dev/recordings/g2-....wav [--meta dev/recordings/g2-....json]
-//                         [--url ws://localhost:8787/ws] [--token dev] [--loop]
+//                         [--url ws://localhost:8787/ws] [--token dev] [--loop] [--location 34.07,-118.444]
 import { readFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
 import WebSocket from 'ws'
@@ -24,6 +24,7 @@ const { values: args } = parseArgs({
     token: { type: 'string', default: 'dev' },
     session: { type: 'string', default: 'demo-1' },
     loop: { type: 'boolean', default: false },
+    location: { type: 'string' }, // "lat,lon": sent once after hello, like the app's first GPS fix
   },
 })
 if (!args.wav) {
@@ -42,6 +43,10 @@ const ws = new WebSocket(url)
 
 ws.on('open', () => {
   ws.send(JSON.stringify({ v: 1, type: 'hello', session: args.session, source: 'glasses' }))
+  if (args.location) {
+    const [latitude, longitude] = args.location.split(',').map(Number)
+    ws.send(JSON.stringify({ v: 1, type: 'location', latitude, longitude, accuracy: 10, at: new Date().toISOString() }))
+  }
   const ping = setInterval(() => ws.send(JSON.stringify({ v: 1, type: 'ping' })), PING_EVERY_MS)
   let offset = 0
   let sentRole: string | undefined

@@ -14,6 +14,8 @@ export type QARecord = {
   reminderStatus?: 'sent' | 'missed' // unset while scheduled; kept so the dashboard can show it
   reminderDoneAt?: string // ISO, when it was sent or marked missed
   expiresAt?: string | null // ISO, optional expiry for family facts
+  forDate?: string // local YYYY-MM-DD the answer is about, when it names a day ("Dinner tomorrow is at 7"); live until that day ends
+  replaces?: string // id of the answer this one updated without being asked ("Lunch moved to 1")
 }
 
 /** One finished sentence, kept for the dashboard log and Creao. voiceId: the remembered voice that said it, when known. */
@@ -74,10 +76,13 @@ export type PhoneMessage =
   | { v: 1; type: 'ping' }
   /** The glasses' speakerRole for the audio frames that follow; sent when it changes. */
   | { v: 1; type: 'role'; role: 'self' | 'other' | 'unknown' }
+  /** The phone's position, for "Where am I?"; sent when it changes and after each reconnect. */
+  | { v: 1; type: 'location'; latitude: number; longitude: number; accuracy?: number | null; at?: string }
 
 /** Contract 1: server to phone. */
 export type ServerMessage =
-  | { v: 1; type: 'answer'; id: string; text: string; speaker: string | null; at: string; source: 'spoken' | 'family' }
+  /** day: "yesterday" / "on Friday" when the answer wasn't given today. source location: built from GPS and map data. */
+  | { v: 1; type: 'answer'; id: string; text: string; speaker: string | null; at: string; day?: string; source: 'spoken' | 'family' | 'location' }
   /** A remembered person is talking to the wearer now (voice recognition); the glasses show the name for a few seconds. */
   | { v: 1; type: 'speaker'; name: string; score: number }
   | { v: 1; type: 'clear' }

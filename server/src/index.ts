@@ -183,7 +183,7 @@ setInterval(() => {
       console.log(`[reminder] missed ${r.id} (due ${r.remindAt})`)
       continue
     }
-    const msg = { ...answerMessage(r), at: formatTime(r.remindAt) }
+    const msg = { ...answerMessage(r), at: formatTime(r.remindAt), day: undefined }
     let delivered = 0
     for (const s of sessions) if (!s.isPaused && s.send(msg)) delivered++
     if (!delivered) continue

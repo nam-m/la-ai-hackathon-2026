@@ -45,6 +45,22 @@ const shouldNotMatch: [string, string][] = [
   ['What day is it?', 'What time is it?'],
   ['Did the dog get fed?', 'Did the cat get fed?'],
   ['What is your name?', 'What is my name?'], // matched on the real G2 before the prompt said "my vs your"
+  ['What time is lunch?', 'When is the dinner?'], // matched live before the prompt said "same event"
+  ["What time we're going to park?", 'When is the dinner?'],
+]
+
+// A day's worth of questions at once, as on the real G2: the right one must be picked out of the crowd.
+const crowd = ['Where is Mary?', 'Where do I live?', 'Who is visiting today?', 'What time is lunch?', "What time we're going to park?", 'What is your name?', 'When is the dinner?']
+const crowdAsks: [string, string | null][] = [
+  ['When is dinner?', 'When is the dinner?'],
+  ['What time do we eat tonight?', 'When is the dinner?'],
+  ['What time do we have lunch?', 'What time is lunch?'],
+  ['When are we going to the park?', "What time we're going to park?"],
+  ['Where did my wife Mary go?', 'Where is Mary?'],
+  ['Is anyone coming over today?', 'Who is visiting today?'],
+  ['What time is it?', null],
+  ['Where are my glasses?', null],
+  ['What is my name?', null],
 ]
 
 let truePos = 0, falseNeg = 0, falsePos = 0, trueNeg = 0
@@ -71,5 +87,24 @@ console.log(`matcher: ${config.geminiApiKey ? `gemini embeddings, ${config.verif
 await run(shouldMatch, true)
 console.log()
 await run(shouldNotMatch, false)
+
+console.log('\ncrowded store:')
+for (const r of store.allRecords()) store.remove(r.id)
+const now = new Date().toISOString()
+for (const [i, q] of crowd.entries()) {
+  const record = { id: `crowd${i}`, question: q, answer: `ANSWER ${i}`, askedAt: now, answeredAt: now, answeredBy: null, source: 'spoken' as const, standing: false }
+  store.upsert(record)
+  await warm(record)
+}
+let crowdRight = 0, crowdWrong = 0
+for (const [asked, expected] of crowdAsks) {
+  const { match, log } = await findMatch(asked)
+  const got = match?.record.question ?? null
+  if (got === expected) crowdRight++
+  else if (got !== null) crowdWrong++
+  console.log(`${got === expected ? 'ok  ' : got === null ? 'MISS' : 'WRONG'} "${asked}" -> ${got ? `"${got}"` : 'none'}${got === expected ? '' : ` (expected ${expected ? `"${expected}"` : 'none'})`}  (${log.ms} ms)`)
+}
+
 console.log(`\ncaught repeats: ${truePos}/${shouldMatch.length}   wrong matches: ${falsePos}/${shouldNotMatch.length}  (must be 0)`)
+console.log(`crowded store: ${crowdRight}/${crowdAsks.length} right, ${crowdWrong} wrong (must be 0)`)
 process.exit(0)

@@ -209,9 +209,15 @@ export function answerLines(answer: Answer, max = ANSWER_MAX_CHARS): { meta: str
   return { meta: answerMeta(answer), line: glassesSafe(text).length <= max ? text : SEE_PHONE_TEXT }
 }
 
-/** "Sarah · 10:40 AM", or "Told you at 10:40 AM" without a speaker (Contract 1). */
+/**
+ * "Sarah · 10:40 AM", or "Told you at 10:40 AM" without a speaker (Contract 1);
+ * "Sarah · yesterday 10:40 AM" / "Told you yesterday at 10:40 AM" for an older
+ * answer; "Location · 10:42 AM" for where the wearer is.
+ */
 export function answerMeta(answer: Answer): string {
-  return oneLine(answer.speaker ? `${answer.speaker} · ${answer.at}` : `Told you at ${answer.at}`)
+  if (answer.source === 'location') return oneLine(`Location · ${answer.at}`)
+  const day = answer.day ? `${answer.day} ` : ''
+  return oneLine(answer.speaker ? `${answer.speaker} · ${day}${answer.at}` : `Told you ${day}at ${answer.at}`)
 }
 
 // Line breaks from the server would need lines the containers don't have.

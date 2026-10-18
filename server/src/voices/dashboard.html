@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rewind Voices</title>
+<title>Rewind Debug</title>
 <style>
   :root {
     --bg: #0e1013; --panel: #161a1f; --line: #262c34; --text: #e6e9ee; --dim: #8a94a3; --faint: #59616d;
@@ -48,9 +48,14 @@
   .k.heard, .k.learned { color: var(--known); } .k.new_voice, .k.name_found { color: var(--accent); } .k.named { color: var(--known); font-weight: 700; }
   .k.unknown, .k.too_short, .k.wearer_like, .k.wearer, .k.no_name { color: var(--dim); } .k.rejected, .k.name_lost, .k.error { color: var(--bad); }
   .log .d { overflow-wrap: anywhere; } .log .d i { color: var(--dim); font-style: normal; }
-  .transcript div { padding: 4px 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 64px 110px 1fr; gap: 8px; font-size: 13px; }
+  .transcript { max-height: 520px; overflow: auto; }
+  .transcript div { padding: 4px 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 64px 90px 1fr; gap: 8px; font-size: 13px; }
   .transcript .r { font: 12px var(--mono); color: var(--dim); }
   .empty { color: var(--faint); font-size: 13px; }
+  .loc { display: grid; gap: 4px; font-size: 13px; }
+  .loc .say { font-size: 18px; font-weight: 600; margin: 4px 0 6px; }
+  .loc a { color: var(--accent); }
+  .answers td.q { color: var(--dim); }
   .keybox { padding: 40px 20px; max-width: 520px; }
   .keybox input { width: 100%; font: 14px var(--mono); padding: 8px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; margin: 10px 0; }
   @media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); padding: 12px 16px 32px; } header { padding: 12px 16px; } .threshold { margin-left: 0; } }
@@ -58,7 +63,7 @@
 </head>
 <body>
 <header>
-  <h1>Rewind · Voices</h1>
+  <h1>Rewind · Debug</h1>
   <span class="chip" id="svc">voice-service …</span>
   <span class="chip" id="names">names …</span>
   <span class="chip" id="sess">sessions …</span>
@@ -133,6 +138,52 @@ function nowSection() {
   })
 }
 
+function locationSection() {
+  const home = state.home
+  const homeLine = home
+    ? h('div', { class: 'sub' }, `home: ${home.label || `${home.lat.toFixed(5)}, ${home.lon.toFixed(5)}`} (set ${time(home.at)}) `, h('button', { class: 'danger', onclick: clearHome }, 'Clear home'))
+    : h('div', { class: 'sub warn' }, 'No home set: "Where am I?" gives the address only.')
+  const rows = (state.locations || []).map(l => {
+    if (!l.fix) return h('div', { class: 'loc' }, h('b', {}, l.session), h('div', { class: 'empty' }, 'No location from the phone yet (allow location for Rewind in the Even app).'))
+    const p = l.place || {}
+    const where = [p.area, p.street, p.neighborhood, p.city].filter(Boolean).join(' · ') || (l.place === null ? 'looking up the address…' : 'no address')
+    return h('div', { class: 'loc' },
+      h('b', {}, l.session),
+      h('div', { class: 'say' }, l.answer ? `“${l.answer}”` : 'No answer yet'),
+      h('div', {}, where),
+      h('div', { class: 'sub' }, `${l.fix.lat.toFixed(5)}, ${l.fix.lon.toFixed(5)}${l.fix.accuracy === null ? '' : ` ±${l.fix.accuracy} m`} · fix ${ago(l.fix.at)}`,
+        l.fromHomeM === null ? '' : ` · ${l.atHome ? 'at home' : `${l.fromHomeM} m from home`}`, ' · ',
+        h('a', { href: `https://www.openstreetmap.org/?mlat=${l.fix.lat}&mlon=${l.fix.lon}#map=18/${l.fix.lat}/${l.fix.lon}`, target: '_blank', rel: 'noopener' }, 'map')),
+      h('div', {}, h('button', { onclick: () => setHome(l.session) }, 'Set as home')))
+  })
+  return h('section', {}, h('h2', {}, 'Location · "Where am I?"'), rows.length ? rows : h('div', { class: 'empty' }, 'No glasses connected.'), homeLine)
+}
+
+function answersSection() {
+  const today = new Date().toLocaleDateString('en-CA')
+  const rows = (state.answers || []).map(a => h('tr', {},
+    h('td', { title: a.at }, time(a.at)),
+    h('td', { class: 'q' }, a.question || (a.remindAt ? `reminder ${time(a.remindAt)}` : '')),
+    h('td', {}, a.answer),
+    h('td', {}, a.by || ''),
+    h('td', {},
+      h('span', { class: 'tag ' + (a.source === 'family' ? 'ok' : '') }, a.source), ' ',
+      a.standing ? h('span', { class: 'tag' }, 'standing') : null, ' ',
+      a.forDate ? h('span', { class: 'tag warn', title: a.forDate }, a.forDate === today ? 'for today' : `for ${new Date(a.forDate + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}`) : null, ' ',
+      a.replaces ? h('span', { class: 'tag ok', title: `replaces ${a.replaces}` }, 'update') : null)))
+  return h('section', { class: 'wide' }, h('h2', {}, `Answers the glasses can show (${rows.length})`),
+    rows.length ? h('table', { class: 'answers' }, h('tr', {}, ['Said', 'Question', 'Answer', 'By', ''].map(t => h('th', {}, t))), rows)
+      : h('div', { class: 'empty' }, 'Nothing stored for today yet.'))
+}
+
+async function setHome(session) {
+  try { await api('/location/home', { method: 'POST', body: JSON.stringify({ session }) }); tick() } catch (e) { alert(e.message) }
+}
+async function clearHome() {
+  if (!confirm('Clear home?')) return
+  try { await api('/location/home', { method: 'DELETE' }); tick() } catch (e) { alert(e.message) }
+}
+
 function voicesSection() {
   const rows = (state.voices || []).map(v => h('tr', {},
     h('td', {}, h('b', { class: v.saved ? 'ok' : 'warn' }, v.label), ' ', h('span', { class: 'tag ' + (v.saved ? 'ok' : 'warn') }, v.saved ? 'saved' : 'temporary'),
@@ -166,7 +217,7 @@ function transcriptSection() {
     h('span', { class: 'r' }, time(l.at)),
     h('span', { class: 'r ' + (l.role === 'wearer' ? '' : l.voice ? 'ok' : 'warn') }, l.role === 'wearer' ? 'WEARER' : l.role === 'other' ? (l.name || l.voice || 'other') : '?'),
     h('span', {}, l.text)))
-  return h('section', { class: 'wide' }, h('h2', {}, 'Transcript today (newest first)'), h('div', { class: 'transcript' }, rows.length ? rows : h('div', { class: 'empty' }, 'No speech yet today.')))
+  return h('section', {}, h('h2', {}, 'Transcript today (newest first)'), h('div', { class: 'transcript' }, rows.length ? rows : h('div', { class: 'empty' }, 'No speech yet today.')))
 }
 
 function render() {
@@ -179,7 +230,7 @@ function render() {
   document.getElementById('wearer').textContent = `wearer samples: ${state.wearerSamples}/5`
   if (!dragging) { document.getElementById('thr').value = state.threshold; document.getElementById('thrv').textContent = state.threshold.toFixed(2) }
   const scroll = document.querySelector('.log')?.scrollTop ?? 0 // the page redraws every second; keep the log where it was
-  document.getElementById('root').replaceChildren(h('main', {}, nowSection(), voicesSection(), eventsSection(), transcriptSection()))
+  document.getElementById('root').replaceChildren(h('main', {}, nowSection(), locationSection(), voicesSection(), answersSection(), eventsSection(), transcriptSection()))
   const log = document.querySelector('.log')
   if (log) log.scrollTop = scroll
 }
