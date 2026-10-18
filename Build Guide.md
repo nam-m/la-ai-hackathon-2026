@@ -11,7 +11,7 @@ Each part talks to the others only through these contracts. Build against them, 
 | From and to | Channel | Contract |
 | --- | --- | --- |
 | A and C | WebSocket `/ws` | 1. Phone socket |
-| C hosts B | TypeScript module `server/speech` | 2. Speech module |
+| C hosts B | TypeScript module `server/src/speech` | 2. Speech module |
 | B to transcription service | Provider WebSocket | 3. Transcription service |
 | D to C | HTTP on C's server | 4. Server endpoints for Creao |
 | C hosts D | TypeScript module `server/creao` | 5. Creao module |
@@ -51,7 +51,7 @@ URL: `wss://<server>/ws?token=<APP_TOKEN>`. The token only keeps random clients 
 
 ### 2. Speech module (B builds, C hosts)
 
-File `server/speech/index.ts`. One module per phone session.
+File `server/src/speech/index.ts`. One module per phone session. See [Role B setup](server/src/speech/README.md) for the implementation and calibration commands.
 
 ```typescript
 export type Utterance = {

@@ -29,7 +29,7 @@ With `SPEECH_PROVIDER=fake`, the server replays `scripts/fake-script.txt` as if 
 | `src/matcher.ts` | C | Embeddings + cosine + yes/no double-check; any failure returns nothing |
 | `src/store.ts` | C | Q&A records and cached embeddings, saved to a JSON file |
 | `src/types.ts` | all | Contract shapes |
-| `src/speech/index.ts` | **B** | Speech module; ships with the `fake` provider. B adds Deepgram or ElevenLabs |
+| `src/speech/index.ts` | **B** | ElevenLabs live speech, Deepgram fallback, fake provider; [Role B setup and calibration](src/speech/README.md) |
 | `src/creao/index.ts` | **D** | Creao module; ships as logging stubs. D replaces them |
 | `src/emotion/index.ts` | C | Cuts each wearer question's audio, sends it to `tone-service/`, stores the tone record |
 | `src/wav.ts` | C | WAV header and the 60-second rolling audio buffer |
@@ -72,7 +72,7 @@ Without `GEMINI_API_KEY` the server uses a crude local matcher so it still runs;
 
 ## Deploy (Render or Railway)
 
-- From the Dockerfile, or as a plain Node app (build: `npm ci`, start: `npm start`, Node 20+). Set `NODE_ENV=production` on a plain Node deploy.
+- From the Dockerfile, or as a plain Node app (build: `npm ci`, start: `npm start`, Node 22.9+). Set `NODE_ENV=production` on a plain Node deploy.
 - Set every variable from `.env.example` in the dashboard. `PUBLIC_URL` is the service's HTTPS URL.
 - Both platforms support WebSockets on the same port. Give A the `wss://` URL and `APP_TOKEN`, and D the URL, `FACTS_SECRET` and the webhook URL from `webhookUrl()` (it contains `WEBHOOK_SECRET`).
 - Free tiers sleep when idle: hit `/health` before the demo, and know the JSON file store resets on redeploy (fine for a hackathon; re-run `seed-facts`).

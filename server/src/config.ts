@@ -1,7 +1,9 @@
 import 'dotenv/config'
+import { speechOptionsFromEnv } from './speech/config.js'
 
 // An empty value counts as unset, so `MATCH_THRESHOLD=` in .env doesn't silently become 0.
 const env = (name: string, fallback = '') => process.env[name] || fallback
+const speechOptions = speechOptionsFromEnv({ ...process.env, SPEECH_PROVIDER: env('SPEECH_PROVIDER', 'fake') })
 
 /** HH:MM, zero-padded so times compare correctly ("8:00" -> "08:00"); warns and uses the fallback if invalid. */
 function hhmm(name: string, fallback: string) {
@@ -18,8 +20,9 @@ export const config = {
   webhookSecret: env('WEBHOOK_SECRET', 'change-me-webhook'), // rides in the Creao webhook URL; separate from FACTS_SECRET
   publicUrl: env('PUBLIC_URL', 'http://localhost:8080'),
   timezone: env('TIMEZONE', 'America/Los_Angeles'),
-  speechProvider: env('SPEECH_PROVIDER', 'fake') as 'fake' | 'deepgram' | 'elevenlabs',
-  speechApiKey: env('SPEECH_API_KEY'),
+  speechProvider: speechOptions.provider,
+  speechApiKey: speechOptions.apiKey,
+  speechOptions,
   geminiApiKey: env('GEMINI_API_KEY'),
   embedModel: env('EMBED_MODEL', 'gemini-embedding-001'),
   verifyModel: env('VERIFY_MODEL', 'gemini-2.5-flash'),

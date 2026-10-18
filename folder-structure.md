@@ -39,8 +39,10 @@ asked-answered/
 |   |   |-- wav.ts                    # WAV header + 60-second audio buffer
 |   |   |-- speech/                   # B: speech module
 |   |   |   |-- index.ts              # createSpeechModule() + fake provider
-|   |   |   |-- elevenlabs.ts         # B adds
-|   |   |   `-- deepgram.ts           # B adds (fallback)
+|   |   |   |-- elevenlabs.ts         # B: live Scribe v2 Realtime adapter
+|   |   |   |-- deepgram.ts           # B: Nova-3 fallback adapter
+|   |   |   |-- README.md             # B: setup, calibration and hardware acceptance
+|   |   |   `-- *.ts                  # B: audio clock, roles/types, config, fake replay and tools
 |   |   |-- creao/                    # D: Creao module
 |   |   |   |-- index.ts              # submitLog, submitClip, runSummary, handleWebhook
 |   |   |   `-- client.ts             # D adds: Creao API calls
@@ -50,7 +52,15 @@ asked-answered/
 |   |   |-- fake-phone.ts             # pretends to be A's app (FAKE_PHONE_NOISE=1 for tone)
 |   |   |-- fake-script.txt           # scripted conversation for fake speech
 |   |   |-- seed-facts.ts             # posts sample family facts
-|   |   `-- test-matcher.ts           # 20 matches, 10 look-alikes
+|   |   |-- test-matcher.ts           # 20 matches, 10 look-alikes
+|   |   |-- speech-demo.ts            # B: short, offline contract demo
+|   |   |-- calibrate-speech.ts       # B: real-G2 recording calibration
+|   |   |-- replay-speech.ts          # B: live provider replay of a consented recording
+|   |   |-- speech-record.ts          # B: local transcription-only microphone test
+|   |   |-- recorder-server.ts        # B: loopback recorder HTTP harness
+|   |   `-- recorder-web/             # B: browser recorder assets
+|   |-- test/                        # automated speech, provider and server contract tests
+|   |-- examples/                    # calibration manifest template
 |   `-- data/                         # store.json (gitignored; a volume in Docker)
 |
 `-- tone-service/                     # C: emotion2vec+ (Python), in Docker

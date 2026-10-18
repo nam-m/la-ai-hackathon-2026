@@ -6,7 +6,7 @@ Even G2 glasses that quietly answer the questions a person with early dementia k
 | --- | --- | --- |
 | `glasses-app/` | A: Glasses | A starts it from Even's asr template |
 | `server/` | C: Server and matching | Working; see `server/README.md` |
-| `server/src/speech/` | B: Speech | Fake provider works; add Deepgram or ElevenLabs |
+| `server/src/speech/` | B: Speech | ElevenLabs, Deepgram fallback, fake replay; [setup and hardware checks](server/src/speech/README.md) |
 | `server/src/creao/` | D: Creao | Logging stubs; replace with real Creao calls |
 | `server/src/emotion/` + `tone-service/` | C | Tone of voice with emotion2vec+; see `tone-service/README.md` |
 

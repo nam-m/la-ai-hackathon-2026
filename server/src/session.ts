@@ -3,11 +3,24 @@ import { config } from './config.js'
 import * as store from './store.js'
 import * as matcher from './matcher.js'
 import * as emotion from './emotion/index.js'
-import { createSpeechModule, type QAPair, type SpeechModule, type Utterance } from './speech/index.js'
+import { createSpeechModule, type QAPair, type SpeechModule, type SpeechOptions, type Utterance } from './speech/index.js'
 import { PcmRing } from './wav.js'
 import type { PhoneMessage, QARecord, ServerMessage } from './types.js'
 
 export const sessions = new Set<Session>()
+
+/** Injectable external boundaries for offline contract tests. */
+export type SessionDependencies = {
+  createSpeech: (options: SpeechOptions) => SpeechModule
+  findMatch: typeof matcher.findMatch
+  isReply: typeof matcher.isReply
+  warm: typeof matcher.warm
+  analyzeQuestion: typeof emotion.analyzeQuestion
+}
+const defaultDependencies: SessionDependencies = {
+  createSpeech: createSpeechModule, findMatch: matcher.findMatch, isReply: matcher.isReply,
+  warm: matcher.warm, analyzeQuestion: emotion.analyzeQuestion,
+}
 
 export function formatTime(iso: string) {
   return new Intl.DateTimeFormat('en-US', { timeZone: config.timezone, hour: 'numeric', minute: '2-digit' }).format(new Date(iso))
@@ -29,8 +42,12 @@ export class Session {
   private pairChecks = new Map<string, Promise<boolean>>()
   /** A new wearer question closes the previous answer window (spec 6.4); replies only pair with the latest one. */
   private latestQuestionId: string | null = null
+  private latestQuestionEventId: string | null = null
+  private generation = 0
+  private closed = false
+  private speechUnavailable = false
 
-  constructor(private ws: WebSocket) {
+  constructor(private ws: WebSocket, private readonly dependencies: SessionDependencies = defaultDependencies) {
     sessions.add(this)
     ws.on('message', (data, isBinary) => {
       this.lastHeard = Date.now()
@@ -60,6 +77,7 @@ export class Session {
   }
 
   private onJson(raw: string) {
+    if (this.closed) return
     let msg: PhoneMessage
     try { msg = JSON.parse(raw) } catch { return void this.send({ v: 1, type: 'error', code: 'bad_audio', message: 'Bad JSON' }) }
     if (!msg || typeof msg !== 'object') return void this.send({ v: 1, type: 'error', code: 'bad_audio', message: 'Bad JSON' })
@@ -69,18 +87,23 @@ export class Session {
         this.name = String(msg.session)
         console.log(`[ws ${this.name}] hello from ${msg.source}`)
         this.startSpeech()
-        this.send({ v: 1, type: 'status', text: 'Listening' })
+        if (this.paused || (this.speech && !this.speechUnavailable)) this.send({ v: 1, type: 'status', text: this.paused ? 'Paused' : 'Listening' })
         break
       case 'control':
         if (msg.action === 'pause') {
           this.paused = true
+          this.invalidateWindow()
           this.speech?.pause()
           this.send({ v: 1, type: 'clear' })
           this.send({ v: 1, type: 'status', text: 'Paused' })
-        } else {
+        } else if (msg.action === 'resume') {
           this.paused = false
-          this.speech?.resume()
-          this.send({ v: 1, type: 'status', text: 'Listening' })
+          this.speechUnavailable = false
+          try {
+            if (this.speech) this.speech.resume()
+            else this.startSpeech()
+          } catch { this.speechError() }
+          if (this.speech && !this.speechUnavailable) this.send({ v: 1, type: 'status', text: 'Listening' })
         }
         console.log(`[ws ${this.name}] ${msg.action}`)
         break
@@ -91,52 +114,78 @@ export class Session {
   }
 
   private onAudio(pcm: Buffer) {
-    if (this.paused || !this.speech) return
-    if (pcm.length % 2 !== 0) return void this.send({ v: 1, type: 'error', code: 'bad_audio', message: 'Odd-length PCM frame' })
+    if (this.closed || this.paused || !this.speech) return
+    if (pcm.length % 2 !== 0 || pcm.length > 320_000) return void this.send({ v: 1, type: 'error', code: 'bad_audio', message: 'Expected complete PCM samples in chunks of at most 10 seconds' })
+    if (!pcm.length) return
     this.ring.push(pcm)
     this.speech.pushAudio(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength))
   }
 
   private startSpeech() {
-    if (this.speech) return
-    this.speech = createSpeechModule({
-      provider: config.speechProvider,
-      apiKey: config.speechApiKey,
-      onUtterance: u => this.onUtterance(u),
-      onWearerQuestion: q => void this.onQuestion(q),
-      onPair: p => this.onPair(p),
-      onError: e => {
-        console.warn(`[speech ${this.name}]`, e.message)
-        this.send({ v: 1, type: 'error', code: 'stt_down', message: 'Transcription unavailable' })
-      },
-    })
+    if (this.speech || this.closed || this.paused) return
+    this.speechUnavailable = false
+    try {
+      this.speech = this.dependencies.createSpeech({
+        ...config.speechOptions,
+        onUtterance: u => this.onUtterance(u),
+        onWearerQuestion: q => {
+          void this.onQuestion(q).catch(() => {
+            if (this.latestQuestionId === q.id) this.speechError()
+          })
+        },
+        onPair: p => this.onPair(p),
+        onError: () => this.speechError(),
+      })
+    } catch { this.speechError() }
+  }
+
+  private invalidateWindow() {
+    this.generation++
+    this.latestQuestionId = null
+    this.latestQuestionEventId = null
+    this.pairChecks.clear()
+  }
+
+  private speechError() {
+    this.speechUnavailable = true
+    this.invalidateWindow()
+    this.send({ v: 1, type: 'error', code: 'stt_down', message: 'Transcription unavailable; check server speech configuration or resume to retry' })
+  }
+
+  private isCurrent(questionId: string, generation: number) {
+    return !this.closed && !this.paused && this.generation === generation && this.latestQuestionId === questionId
   }
 
   private onUtterance(u: Utterance) {
+    if (this.closed || this.paused) return
     console.log(`[speech ${this.name}] ${u.role === 'wearer' ? 'WEARER' : u.role === 'unknown' ? '?' : (u.name ?? u.speaker ?? 'other')}: ${u.text}`)
     store.addTranscript({ id: u.id + '_' + Date.now().toString(36), at: new Date().toISOString(), role: u.role, name: u.role === 'other' ? u.name : null, text: u.text })
   }
 
   private async onQuestion(q: Utterance) {
-    if (q.role !== 'wearer') return // only the wearer's own questions (spec 6.1); B shouldn't send others, but be sure
+    if (this.closed || this.paused || q.role !== 'wearer') return
+    this.invalidateWindow()
     this.latestQuestionId = q.id
+    const generation = this.generation
     const eventId = store.newId('qe')
+    this.latestQuestionEventId = eventId
     store.addEvent({ id: eventId, at: new Date().toISOString(), question: q.text, matchedRecordId: null, matchScore: null })
 
     // Tone runs beside matching and is never awaited here.
-    void emotion.analyzeQuestion(eventId, this.ring.get(q.startMs, q.endMs))
+    void this.dependencies.analyzeQuestion(eventId, this.ring.get(q.startMs, q.endMs)).catch(() => undefined)
 
-    const { match, log } = await matcher.findMatch(q.text)
+    const { match, log } = await this.dependencies.findMatch(q.text)
+    if (!this.isCurrent(q.id, generation)) return
     console.log(`[match ${this.name}]`, JSON.stringify(log))
     // Spec 6.3: a spoken answer that disagrees with a family fact shows nothing; the dashboard flags it for the family.
     if (log.contradiction) store.updateEvent(eventId, { contradiction: log.contradiction })
     if (!match) return
-    store.updateEvent(eventId, { matchedRecordId: match.record.id, matchScore: +match.score.toFixed(3) })
-    if (this.paused) return
     // Recheck at delivery: the fact may have been edited, deleted or expired while we were matching (spec 6.5).
     const current = store.get(match.record.id)
     if (!current || current.answer !== match.record.answer) return void console.log(`[match ${this.name}] dropped ${match.record.id}: changed since match`)
-    this.send(answerMessage(current))
+    if (this.send(answerMessage(current))) {
+      store.updateEvent(eventId, { matchedRecordId: match.record.id, matchScore: +match.score.toFixed(3) })
+    }
   }
 
   /**
@@ -147,23 +196,26 @@ export class Session {
    */
   private onPair(p: QAPair) {
     const qid = p.question.id
-    if (this.latestQuestionId && qid !== this.latestQuestionId) {
-      return console.log(`[store ${this.name}] skipped pair, newer question asked: "${p.question.text}" -> "${p.answer.text}"`)
-    }
+    const generation = this.generation
+    if (!this.isCurrent(qid, generation)) return
+    const answeredAt = Date.now()
     const previous = this.pairChecks.get(qid) ?? Promise.resolve(false)
     // Chain per question so two candidates checked at once can't both be saved.
-    const next = previous.then(saved => saved || this.tryPair(p))
+    const next = previous.then(saved => saved || this.tryPair(p, generation, answeredAt)).catch(() => false)
     this.pairChecks.set(qid, next)
     if (this.pairChecks.size > 50) this.pairChecks.delete(this.pairChecks.keys().next().value!) // old windows are long closed
   }
 
-  private async tryPair(p: QAPair): Promise<boolean> {
-    const answeredAt = Date.now()
-    if (p.question.role !== 'wearer' || p.answer.role !== 'other') {
+  private async tryPair(p: QAPair, generation: number, answeredAt: number): Promise<boolean> {
+    if (!this.isCurrent(p.question.id, generation)) return false
+    const gap = p.answer.startMs - p.question.endMs
+    if (p.question.role !== 'wearer' || p.answer.role !== 'other' || !Number.isFinite(gap) || gap < 0 || gap > 30_000) {
       console.log(`[store ${this.name}] skipped pair, roles ${p.question.role} -> ${p.answer.role}`)
       return false
     }
-    if (!(await matcher.isReply(p.question.text, p.answer.text))) {
+    const replies = await this.dependencies.isReply(p.question.text, p.answer.text)
+    if (!this.isCurrent(p.question.id, generation)) return false
+    if (!replies) {
       console.log(`[store ${this.name}] not a reply, window stays open: "${p.question.text}" -> "${p.answer.text}"`)
       return false
     }
@@ -178,17 +230,18 @@ export class Session {
       standing: false,
     }
     store.upsert(record)
-    void matcher.warm(record)
+    void this.dependencies.warm(record).catch(() => undefined)
     // Link the ask that produced this answer, so it counts with its later repeats.
-    const ask = [...store.todaysEvents()].reverse().find(e => e.question === p.question.text)
-    if (ask) store.updateEvent(ask.id, { answerRecordId: record.id })
+    if (this.latestQuestionEventId) store.updateEvent(this.latestQuestionEventId, { answerRecordId: record.id })
     console.log(`[store] pair ${record.id}: "${record.question}" -> "${record.answer}"`)
     return true
   }
 
   private close() {
     if (!sessions.delete(this)) return
+    this.closed = true
+    this.invalidateWindow()
     console.log(`[ws ${this.name}] closed`)
-    void this.speech?.close()
+    void this.speech?.close().catch(() => undefined)
   }
 }
