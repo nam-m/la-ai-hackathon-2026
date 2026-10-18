@@ -1,0 +1,5 @@
+# endMs<TAB>role<TAB>family name or -<TAB>verbatim transcript
+500	wearer	-	What time is lunch?
+1400	other	Sarah	Lunch is at noon.
+2300	wearer	-	When is lunch?
+3200	other	Sarah	Lunch is at noon.

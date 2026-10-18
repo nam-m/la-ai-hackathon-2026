@@ -1,0 +1,22 @@
+{
+  "name": "asked-answered-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": { "node": ">=22.9" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc && node -e \"require('node:fs').copyFileSync('scripts/fake-script.txt','dist/scripts/fake-script.txt')\"",
+    "test": "tsx --test test/*.test.ts",
+    "speech:demo": "tsx scripts/speech-demo.ts",
+    "speech:calibrate": "tsx scripts/calibrate-speech.ts",
+    "speech:replay": "node --env-file-if-exists=.env --import tsx scripts/replay-speech.ts"
+  },
+  "dependencies": { "ws": "^8.18.3" },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
