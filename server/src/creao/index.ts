@@ -1,5 +1,6 @@
 // Contract 5: Creao module. D owns this file and replaces the stubs.
 // Nothing here is ever awaited in the live path.
+import { config } from '../config.js'
 import { isDemo } from '../demo.js'
 import * as store from '../store.js'
 import type { RunKind } from '../types.js'
@@ -27,9 +28,12 @@ export async function submitLog(batch: {
   return `run_stub_${Date.now()}`
 }
 
-/** Real (non-demo) data for the given local dates, as the agents' `data_json`. */
+/**
+ * The given local dates' data as the agents' `data_json`. With DEMO_DATA=1 the demo day is included, so a summary
+ * asked for in the demo describes what the dashboard shows; otherwise only real data (a demo day is cleared then anyway).
+ */
 function dataJsonFor(dates: string[]) {
-  const real = <T extends { id: string }>(xs: T[]) => xs.filter(x => !isDemo(x.id))
+  const real = <T extends { id: string }>(xs: T[]) => (config.demoData ? xs : xs.filter(x => !isDemo(x.id)))
   const { events, tones } = store.between('', '~')
   return buildDataJson(dates, real(events), real(tones), real(store.allRecords()), store.localDate)
 }
