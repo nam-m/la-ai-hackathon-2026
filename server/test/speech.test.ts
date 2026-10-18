@@ -39,7 +39,7 @@ function harness(overrides: Partial<SpeechOptions> = {}) {
 }
 
 test('questions use punctuation and bounded question prefixes', () => {
-  for (const text of ['What time is lunch', 'When’s lunch?', 'Is Sarah here', 'Lunch is when?', '“Where is Mary?”', 'Who\'s that', 'Can you help?']) assert.equal(isQuestion(text), true, text);
+  for (const text of ['What time is lunch', 'When’s lunch?', 'Is Sarah here', 'Lunch is when?', '“Where is Mary?”', 'Who\'s that', 'Can you help?', 'Where is Mary...', 'Where is Mary…']) assert.equal(isQuestion(text), true, text);
   for (const text of ['Lunch is at noon.', 'Whatever works.', 'Sarah is here.', '', 'Can\'t find my keys.', 'Can’t find my keys', 'What a lovely day!', 'Do it now.', 'Have a good one.']) assert.equal(isQuestion(text), false, text);
 });
 
@@ -182,6 +182,45 @@ test('a dropped provider connection reconnects on the next audio and keeps the s
     assert.equal(h.errors.length, 0);
     assert.equal(h.utterances[1]!.startMs, 500);
     assert.equal(h.utterances[1]!.endMs, 1000);
+  } finally { await h.speech.close(); }
+});
+
+test('a Deepgram auto-reconnect forgets connection-local speaker labels', async () => {
+  const h = harness({ provider: 'deepgram', wearerThresholdDb: undefined, wearerSpeaker: '0' });
+  try {
+    h.push(500); h.say('When is lunch?', 0, 500, '0');
+    assert.equal(h.utterances[0]!.role, 'wearer');
+    h.connections.at(-1)!.onError(new Error('lost connection'));
+    h.push(500); h.say('Who is that?', 0, 500, '0');
+    assert.equal(h.connections.length, 2);
+    // Label '0' on the new connection may be anyone: it must not inherit "wearer".
+    assert.equal(h.utterances[1]!.role, 'unknown');
+  } finally { await h.speech.close(); }
+});
+
+test('auth, quota and missing-key errors fail at once without reconnecting', async () => {
+  for (const message of ['ElevenLabs transcription failed (auth_error)', 'ElevenLabs transcription failed (quota_exceeded)',
+    'ElevenLabs transcription requires an API key', 'Deepgram WebSocket handshake was rejected']) {
+    const h = harness();
+    try {
+      h.push(500);
+      h.connections.at(-1)!.onError(new Error(message));
+      h.push(500);
+      assert.equal(h.errors.length, 1, message);
+      assert.equal(h.connections.length, 1, message);
+    } finally { await h.speech.close(); }
+  }
+});
+
+test('resume starts with a fresh reconnect budget', async () => {
+  const h = harness();
+  try {
+    h.push(500);
+    exhaustReconnects(h);
+    assert.equal(h.errors.length, 1);
+    h.speech.resume(); h.push(100);
+    h.connections.at(-1)!.onError(new Error('lost connection'));
+    assert.equal(h.errors.length, 1); // a first drop after resume reconnects instead of failing again
   } finally { await h.speech.close(); }
 });
 

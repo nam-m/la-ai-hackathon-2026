@@ -102,18 +102,27 @@ export function createSpeechModule(opts: SpeechOptions): ConfigurableSpeechModul
   }
   // A dropped or failing provider connection is retried before transcription is reported as down:
   // the dead connection is closed and the next audio frame reconnects (the same path as an idle
-  // ElevenLabs close), so no frames are skipped and the source clock mapping is unchanged.
+  // ElevenLabs close), so the source clock mapping is unchanged. Audio already sent to the dead
+  // connection is not transcribed. Errors a reconnect can't fix (auth, quota, missing key) fail at once.
   const RETRY_LIMIT = 3;
   const RETRY_WINDOW_MS = 60_000;
+  const PERMANENT = /auth_error|quota_exceeded|unaccepted_terms|API key is required|requires an API key|handshake was rejected/;
   let retries: number[] = [];
   function retryOrFail(error: Error): void {
     if (closed || failed || paused) return;
+    if (PERMANENT.test(error.message)) { fail(error); return; }
     const t = now();
     retries = retries.filter(at => t - at < RETRY_WINDOW_MS);
     if (retries.length >= RETRY_LIMIT) { fail(error); return; }
     retries.push(t);
     generation++;
     stopProvider();
+    // The open answer window survives (the question was attributed on the old connection).
+    // Provider labels are connection-local (as on resume): never carry them into the new connection.
+    wearerSpeaker = undefined;
+    names = new Map();
+    setup = undefined;
+    seen.clear();
     console.warn(`[speech] provider connection failed; reconnecting on next audio (${retries.length}/${RETRY_LIMIT})`);
   }
   function emit(u: Utterance): void {
@@ -257,6 +266,7 @@ export function createSpeechModule(opts: SpeechOptions): ConfigurableSpeechModul
       if (closed || (!paused && !failed)) return;
       paused = false;
       failed = false;
+      retries = [];
       // Provider diarization labels are connection-local. Never reuse old labels.
       wearerSpeaker = undefined;
       names = new Map();
