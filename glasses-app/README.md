@@ -1,56 +1,94 @@
-# asr
+# Rewind — glasses app (Part A)
 
-Live speech-to-text demo on G2. Mic audio → your chosen STT provider → transcript rendered on the glasses and mirrored in the companion WebView. Includes double-tap-to-exit wiring.
+The Even Hub app that runs on the phone. It streams the G2 microphone to the
+team server over `/ws` and shows the answer to a repeated question as one line
+at the bottom of the glasses: *Lunch is at noon, Sarah, 10:40 AM.*
+The protocol is Contract 1 in [`../Build Guide.md`](../Build%20Guide.md);
+`src/protocol.ts` holds its types.
 
-**The STT client itself is a blank stub.** This template has zero vendor code baked in. You pick your own provider (Deepgram, AssemblyAI, Whisper, Soniox, self-hosted, etc.) and wire it up in `src/asr/stt.ts`.
-
-## Run
+## Run it
 
 ```bash
-cp .env.example .env.local   # paste your STT provider's API key into VITE_STT_API_KEY
 npm install
-npm run dev
+npm run mock      # terminal 1: stand-in server on ws://localhost:8787/ws
+npm run dev       # terminal 2: Vite on :5173, proxies /ws to the mock
 ```
 
-Then `npm run simulate` (desktop simulator) or `npx evenhub qr --url http://<your-ip>:5173` to test on real glasses.
+Then either:
 
-## First-run expectation
+- **Simulator:** `npm run simulate` (uses the laptop mic).
+- **Real G2:** `npx evenhub qr --url http://<laptop-ip>:5173` and scan it in
+  the Even app. Find the IP with `ipconfig getifaddr en0`. On an IPv6-only
+  network (some phone hotspots give the laptop `192.0.0.2`, which the phone
+  can't reach), use the IPv6 address from `ifconfig en0` instead:
+  `--url "http://[2607:...]:5173"`. Open the URL in the phone's browser first
+  to check the phone can reach the laptop.
 
-Until you implement `src/asr/stt.ts`, the companion WebView shows a red error chip: *"STT provider not implemented — open src/asr/stt.ts and wire up your chosen STT service."* That's by design — the scaffold compiles and runs, but the STT handoff throws on startup so you know exactly where to go.
+The mock logs the audio rate (the G2 sends about 31 kB/s) and sends a sample
+answer every 20 s. Type `a` + Enter for an answer now, `c` to clear, `e` for
+an `stt_down` error.
 
-## What's in here
+### Use C's server
 
-| File | Purpose |
-|---|---|
-| `src/main.ts` | App entry. Creates the transcript container, starts the mic, routes PCM chunks to `stt.ts`, renders snapshots with a 120ms debounce, handles double-tap exit. |
-| `src/asr/stt.ts` | **Blank stub.** Provider-agnostic `SttClient` interface + `startSttStream()` function. Implement your STT provider here. |
-| `src/ui.ts` | Companion-app UI — status chip, live transcript mirror, dark theme. |
-| `index.html` | WebView host with zoom-locked viewport. |
-| `app.json` | Manifest with `g2-microphone` permission. **No `network` permission by default** — add yours when you pick a provider. |
-| `.env.example` | `VITE_STT_API_KEY=` placeholder for your provider's key. |
+Put its origin in `.env.local` (see `.env.example`) and restart `npm run dev`:
 
-## Wiring your STT provider
+```bash
+WS_TARGET=wss://<c-server-host>
+```
 
-1. Open `src/asr/stt.ts`. Replace the `throw` inside `startSttStream` with your provider's logic:
-   - Connect to the provider (WebSocket for streaming, HTTP for batch).
-   - Send the authentication / session-start message.
-   - On each inbound transcript message, build a `SttSnapshot { finalText, interimText, finished }` and call `onSnapshot()`.
-   - Implement `sendPcm(chunk)` to forward each mic chunk. The input is PCM s16le @ 16 kHz, mono — most providers accept this directly; resample if yours doesn't.
-   - Implement `close()` to signal end-of-stream.
+The app keeps talking to same-origin `/ws` and Vite forwards it, so the
+manifest whitelist doesn't matter in dev.
 
-2. Paste your API key into `.env.local` as `VITE_STT_API_KEY=...`.
+## On the glasses
 
-3. Add a `network` permission to `app.json` with your provider's hosts:
+| Gesture | Does |
+| --- | --- |
+| Tap | Dismiss the answer (or retry the mic if it was blocked) |
+| Swipe up | Show the last answer again |
+| Long press | Pause / resume. Pause turns the mic fully off and shows "Paused" |
+| Double tap | Exit through the system dialog (required on the root page) |
 
-   ```json
-   { "name": "network", "desc": "Stream audio to STT.", "whitelist": ["https://api.yourprovider.com", "wss://stream.yourprovider.com"] }
-   ```
+Answers clear after 8 s or on a `clear` message. The display is blank
+otherwise, except "Paused", a blocked-mic message, and a small "offline" in
+the corner when the server has been unreachable for more than 3 s.
+`ANSWER_MAX_CHARS` in `src/display.ts` caps answers at two lines; tune it on
+the real display with the mock's long sample answer.
 
-   `evenhub pack` rejects an empty whitelist, which is why this entry isn't in `app.json` by default.
+## Debug panel (for B's loudness test)
 
-## G2 specifics
+On the phone screen, open **Debug: mic and loudness**. It shows the live level
+in dBFS and the glasses' own `speakerRole` guess (`self` / `other` /
+`unknown`) for every audio chunk. **Record 30 s** saves
+`dev/recordings/g2-<time>.wav` plus a `.json` with level, role and direction
+for every 100 ms chunk to the laptop. This works only from `npm run dev`.
 
-- Mic format: PCM s16le, 16 kHz, mono. Delivered via `event.audioEvent.audioPcm` as `Uint8Array`.
-- Glasses render is debounced to 120 ms — the BLE queue can't keep up with per-token writes.
-- Transcript is trimmed to the last 240 characters to fit the 576x288 text container at default font.
-- **Double-tap the temple** → `shutDownPageContainer(1)` → system exit confirmation dialog.
+Replay a recording to any server as if it came from the glasses:
+
+```bash
+npm run fake-phone -- --wav dev/recordings/g2-<time>.wav --url ws://localhost:8787/ws [--loop]
+```
+
+## Files
+
+| File | What |
+| --- | --- |
+| `src/main.ts` | Startup order and wiring: bridge, glasses page, socket, mic, gestures |
+| `src/socket.ts` | `/ws` client: hello, ping every 15 s, reconnect 1/2/4/10 s |
+| `src/audio.ts` | Glasses mic with a watchdog that re-arms it after a stall |
+| `src/display.ts` | Glasses layout, answer formatting, throttled BLE writes |
+| `src/gestures.ts` | Bridge event to gesture mapping |
+| `src/state.ts` | Pause state and last answer, kept across restarts (today only) |
+| `src/phone.ts` | Phone screen: mirror, status, pause, debug panel |
+| `src/debug.ts` | Level meter, speakerRole tally, recording |
+| `dev/mock-server.ts` | Contract 1 mock |
+| `dev/fake-phone.ts` | Streams a WAV to `/ws` like the app does |
+
+## Before shipping the Beta
+
+- Set `VITE_SERVER_URL=wss://<c-server-host>/ws` and put `wss://<c-server-host>`
+  in the `network` whitelist in `app.json` (replace the placeholder).
+- `npm run pack`, upload the `.ehpk`, install from **Me → Beta tester**.
+- The 5-minute locked-phone test only works on a Beta install: QR dev builds
+  die when the phone locks.
+- The simulator doesn't send `SYSTEM_EXIT_EVENT`, so after a double tap it
+  keeps streaming. Check exit cleanup on the real G2.
