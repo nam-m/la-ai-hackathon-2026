@@ -40,6 +40,17 @@ test('parseAgentJson reads the agent object, a wrapped response, and rejects pro
   assert.equal(parseAgentJson({ id: '1', status: 'completed', result: { text: 'no json here' } }), null)
 })
 
+test('parseAgentJson falls back to the json block in chatText when text holds only script stats', () => {
+  // Shape of a real Daily brief run (2026-10-18): stats in text, the brief in chatText.
+  const run = {
+    id: '1', status: 'completed', result: {
+      text: '{"date":"2026-10-18","wearer_questions":0,"events_seen":0,"repeat_groups":0}',
+      chatText: 'Inputs validated. Running the bundled script now.Here is the Daily brief:\n\n```json\n{\n  "schema_version": "1.0",\n  "date": "2026-10-18",\n  "summary": "Not enough data today.",\n  "repeatedQuestions": []\n}\n```\n\nLet me know if {anything} else.',
+    },
+  }
+  assert.deepEqual(parseAgentJson(run), { schema_version: '1.0', date: '2026-10-18', summary: 'Not enough data today.', repeatedQuestions: [] })
+})
+
 test('startRun posts inputs to the app with the Bearer key and returns the run id', async () => {
   const calls = mock(() => ({ id: 'run-1', status: 'pending' }))
   assert.equal(await startRun('dailyBrief', { date: '2026-10-18' }), 'run-1')
