@@ -88,8 +88,7 @@ Ordered by how much each would help the demo and the judging question ("does the
 5. **Persist Care assistant runs.** Care results live in server memory (cap 50), so a restart loses them. Store them with the day.
 6. **Worry threshold.** The server marks worry at a tone score of 0.5, a placeholder. Confirm it with whoever owns the tone model, and consider requiring 6 or more observations before the Daily brief says "more worried" (known issue 3 in `HANDOFF.md`).
 7. **Failure handling.** A failed or missed run is logged and not retried, because each run costs credits. Add a visible "last run failed, run again" state on the card and a daily credit cap.
-8. **Retry on a stale card.** Cards show the last saved result. Show its `generatedAt` so a viewer knows how fresh it is.
-9. **Optional second path.** Four hosted v2 agents exist on the developer platform. They are a backup only: they do not appear on agent.creao.ai and cannot run the chat-app agents, so the submission uses the capi trigger path above.
+8. **Optional second path.** Four hosted v2 agents exist on the developer platform. They are a backup only: they do not appear on agent.creao.ai and cannot run the chat-app agents, so the submission uses the capi trigger path above.
 
 ## Quick check that it all works
 
