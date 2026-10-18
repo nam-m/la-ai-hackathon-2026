@@ -39,7 +39,8 @@ function harness(overrides: Partial<SpeechOptions> = {}) {
 }
 
 test('questions use punctuation and bounded question prefixes', () => {
-  for (const text of ['What time is lunch', 'When’s lunch?', 'Is Sarah here', 'Lunch is when?', '“Where is Mary?”', 'Who\'s that', 'Can you help?', 'Where is Mary...', 'Where is Mary…']) assert.equal(isQuestion(text), true, text);
+  for (const text of ['What time is lunch', 'When’s lunch?', 'Is Sarah here', 'Lunch is when?', '“Where is Mary?”', 'Who\'s that', 'Can you help?', 'Where is Mary...', 'Where is Mary…', 'What time is lunch？', 'Lunch is when？']) assert.equal(isQuestion(text), true, text);
+  for (const text of ['Lunch is at noon．', 'What a lovely day！', 'Do it now。']) assert.equal(isQuestion(text), false, text);
   for (const text of ['Lunch is at noon.', 'Whatever works.', 'Sarah is here.', '', 'Can\'t find my keys.', 'Can’t find my keys', 'What a lovely day!', 'Do it now.', 'Have a good one.']) assert.equal(isQuestion(text), false, text);
 });
 

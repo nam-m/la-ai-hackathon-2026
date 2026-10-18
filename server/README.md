@@ -55,7 +55,7 @@ With `SPEECH_PROVIDER=fake`, the server replays `scripts/fake-script.txt` as if 
 - **Creao log:** every 5 minutes, `submitLog` with new transcript, pairs, questions and tone (window ends 15 s ago).
 - **Summary and patterns:** `runSummary` at `SUMMARY_AT` (20:00) and `runPatterns` at `PATTERNS_AT` (23:30), wearer's local time, once a day, within 15 minutes after the time (a server started later doesn't fire them). The window doesn't cross midnight, so keep both at 23:45 or earlier. A missed or failed run isn't retried; use `POST /creao/summary`.
 - **Reminders:** sent to listening phones within 5 minutes of `remindAt`, otherwise marked `missed`; the status shows in `/log/today`. No backlog after a reconnect.
-- **Tone probe:** every 30 s until the tone service answers with its model loaded.
+- **Tone health check:** every 30 s while tone is on, so `/health` shows an outage (`degraded`, then `unreachable` after 3 failed checks) and a recovery within about 30 s, even with no questions coming in. Logs only on changes.
 
 ## Tuning the matcher
 

@@ -230,8 +230,9 @@ setInterval(() => { for (const s of sessions) s.closeIfIdle(MAX_IDLE_MS) }, 5_00
 // Expire yesterday's records.
 setInterval(() => store.pruneExpired(), 10 * 60_000)
 
-// Keep probing the tone service until its model is loaded (the first start downloads it).
-const toneProbe = setInterval(async () => { if (await emotion.probe()) clearInterval(toneProbe) }, 30_000)
+// Health-check the tone service every 30 s while tone is on: /health must show an outage and a recovery
+// (and the first start's model download) without waiting for the next question.
+setInterval(() => { if (emotion.toneEnabled()) void emotion.probe() }, 30_000)
 
 // docker stop / Ctrl-C: save the store and exit instead of being killed mid-write.
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {
@@ -251,7 +252,7 @@ server.listen(config.port, () => {
   if (config.geminiApiKey && config.verifyProvider === 'stepfun' && (!config.stepfunApiKey || !config.stepfunModel))
     console.warn('[server] WARNING: VERIFY_PROVIDER=stepfun but STEPFUN_API_KEY or STEPFUN_MODEL is missing; every yes/no check will fail, so nothing will be answered.')
   console.log(`[server] tone=${config.toneUrl || 'not configured (set TONE_URL)'}`)
-  void emotion.probe().then(ok => ok && clearInterval(toneProbe))
+  void emotion.probe()
   scheduleTick()
   if (!config.geminiApiKey) console.warn('[server] WARNING: no GEMINI_API_KEY. The local matcher is for testing plumbing only and makes wrong matches. Never demo without the key.')
 })
