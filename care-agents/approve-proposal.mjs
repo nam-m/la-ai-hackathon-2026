@@ -35,7 +35,7 @@ const id = flag('--id') ?? proposal.replaces_fact_id
 if (!id) fail('no fact id: pass --id')
 const fact = {
   id, question: proposal.question, answer: proposal.answer_wording, answeredBy: flag('--by') ?? 'Sarah',
-  standing: false, remindAt: null, expiresAt: proposal.valid_until,
+  standing: true, remindAt: null, expiresAt: proposal.valid_until, // standing so it lives until expiresAt (non-standing facts end at local midnight)
 }
 const base = (process.env.SERVER_URL ?? 'http://localhost:8080').replace(/\/$/, '')
 
