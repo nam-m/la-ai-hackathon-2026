@@ -9,6 +9,7 @@ process.env.DOTENV_CONFIG_PATH = join(directory, 'no-env-file')
 process.env.DATA_FILE = join(directory, 'store.json')
 process.env.TIMEZONE = 'America/Los_Angeles'
 process.env.CREAO_POLL_MS = '1'
+process.env.DEMO_DATA = '1'
 process.env.CAPI_KEY_DAILY_BRIEF = 'capi_test_daily'
 process.env.CAPI_KEY_PATTERN_FINDER = 'capi_test_pattern'
 process.env.CAPI_KEY_OPEN_QUESTIONS = 'capi_test_oq'
@@ -192,4 +193,17 @@ test('a second start while one is running is refused and sends nothing', async (
   await until(() => calls.some(c => c.init.method === 'GET'))
   await new Promise(r => setTimeout(r, 50))
   await assert.doesNotReject(creao.runOpenQuestions('2026-10-18')) // free again once the first finished
+})
+
+test('with DEMO_DATA=1 the demo day goes to the agents, so a demo summary has questions to describe', async () => {
+  const { seedDemo } = await import('../src/demo.js')
+  const now = new Date()
+  seedDemo(now)
+  const date = store.localDate(now.toISOString())
+  const calls = mock(finishing('run-demo-sum', '{"schema_version":"1.0","summary":"Lunch came up four times."}'))
+  await creao.runSummary(date)
+  const day = JSON.parse(JSON.parse(String(calls[0].init.body)).inputs.data_json).days[0]
+  assert.ok(day.events.filter((e: { id: string }) => e.id.startsWith('demo_')).length >= 8)
+  await until(() => store.getDay(date)?.summary?.summary === 'Lunch came up four times.')
+  assert.equal(store.getDay(date)?.summary?.demo, undefined) // the AI summary replaced the canned one
 })
