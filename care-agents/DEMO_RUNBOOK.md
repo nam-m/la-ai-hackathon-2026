@@ -22,6 +22,10 @@ Lead with **Open Questions + Care assistant** (the loop that closes), with **Dai
 
 Time budget for 3 minutes: beat 1 (25 s), 2 (30 s), 3 (30 s), 4 (40 s), 5 (20 s), 6 (25 s), 7 (10 s). Cut 6 first if short.
 
+## Orchestration finding (tested 08:00 PT)
+
+A saved CREAO agent cannot call other saved agents (sub-agents are off on the account, workflow tasks cannot bind to saved apps, a saved agent has no start-another-app helper). The CREAO chat itself can: it ran Open Questions and Pattern finder in parallel, then Daily brief, and returned one combined JSON with per-step times (saved as `evening_routine_2026-10-17.json` in that chat). So the demo is chat-driven: one prompt, "Run the evening routine for 2026-10-17: Open Questions and Pattern finder in parallel, then Daily brief for 2026-10-12, show the combined JSON and per-step times." Say it plainly: the chat orchestrates our saved agents; it is not a schedulable "Evening routine" agent. In that test the three steps finished in 1 to 2 seconds each, so slow runs are less likely than feared, but keep the backup tabs.
+
 ## Runs take minutes: how to handle it
 
 - Start beats 2, 3 and 4 in three CREAO tabs before you begin talking; narrate while they finish. Keep the same runs already finished in other tabs as the backup.
