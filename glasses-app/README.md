@@ -1,10 +1,17 @@
 # Rewind — glasses app (Part A)
 
 The Even Hub app that runs on the phone. It streams the G2 microphone to the
-team server over `/ws` and shows the answer to a repeated question as one line
-at the bottom of the glasses: *Lunch is at noon, Sarah, 10:40 AM.*
+team server over `/ws` and shows the answer to a repeated question low on the
+glasses: who and when on a dim line, the answer word for word under it.
+
+```
+Sarah · 10:40 AM          (dim)
+Lunch is at noon.
+```
+
 The protocol is Contract 1 in [`../Build Guide.md`](../Build%20Guide.md);
-`src/protocol.ts` holds its types.
+`src/protocol.ts` holds its types. The UI follows the
+[Even Realities design guidelines](https://hub.evenrealities.com/docs/build/design-guidelines).
 
 ## Run it
 
@@ -49,10 +56,24 @@ manifest whitelist doesn't matter in dev.
 | Double tap | Exit through the system dialog (required on the root page) |
 
 Answers clear after 8 s or on a `clear` message. The display is blank
-otherwise, except "Paused", a blocked-mic message, and a small "offline" in
-the corner when the server has been unreachable for more than 3 s.
-`ANSWER_MAX_CHARS` in `src/display.ts` caps answers at two lines; tune it on
-the real display with the mock's long sample answer.
+otherwise, except a dim "Paused", a blocked-mic message (retried every 15 s
+and on tap), and a dim "offline" in the corner when the server has been
+unreachable for more than 3 s. Without a speaker name the dim line reads
+"Told you at 10:40 AM".
+
+Design notes, from Even's guidelines and display docs:
+
+- Full brightness only for the answer; who/when and status use `textColor` 2.
+- The firmware font is proportional, has no sizes, and silently drops
+  characters it lacks. `glassesSafe()` in `src/display.ts` keeps Latin-1 plus
+  the UI glyphs the font has (`● ○ ▲ ▶ ━ ─ ╭ ╮ █` …) and swaps curly quotes,
+  dashes and odd spaces for ASCII.
+- Containers are sized for 27 px lines plus padding; text that overflows a
+  container by a pixel grows a scrollbar.
+- `ANSWER_MAX_CHARS` caps the answer at two lines; tune it on the real display
+  with the mock's long sample answer.
+- The phone screen uses the Even app's light-theme tokens (`TC-1st`, `BC-3rd`,
+  6 px radius, 12/16/24 px spacing) in `src/phone.ts`.
 
 ## Debug panel (for B's loudness test)
 
