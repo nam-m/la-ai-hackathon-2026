@@ -25,8 +25,9 @@ export function readFakeScript(path?: string): FakeLine[] {
       const person = label?.trim();
       if (!delay?.trim() || !Number.isFinite(seconds) || seconds <= 0 || !person) throw new Error(`Invalid fake script line ${index + 1}`);
       endMs = previous + seconds * 1000;
-      role = person === 'wearer' ? 'wearer' : person === 'unknown' ? 'unknown' : 'other';
-      name = role === 'other' && person !== 'other' ? person : null;
+      const keyword = person.toLowerCase(); // "Wearer" and "wearer" are the same role; names keep their case
+      role = keyword === 'wearer' ? 'wearer' : keyword === 'unknown' ? 'unknown' : 'other';
+      name = role === 'other' && keyword !== 'other' ? person : null;
       // Pipe formatting spaces are not transcript content; internal pipes remain.
       text = words.join('|').trim();
     }

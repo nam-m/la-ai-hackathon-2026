@@ -2,6 +2,8 @@ import WebSocket, { type ClientOptions, type RawData } from 'ws';
 import type { ProviderOptions, ProviderUtterance, SpeechProvider } from './types.js';
 
 const BYTES_PER_MS = 32; // Signed 16-bit little-endian, 16 kHz, mono.
+// Provider timestamps are rounded; allow this much past the audio actually sent.
+const DRIFT_MS = 20;
 const CHUNK_BYTES = 3_200; // 100 ms: the documented lower end of 0.1–1 s.
 const MAX_PENDING_BYTES = 160_000; // Five seconds, never silently drop audio.
 const MAX_SOCKET_BUFFER_BYTES = 256_000;
@@ -164,6 +166,9 @@ export function createElevenLabsProvider(
     }
   }
 
+  // One bad final must not end live transcription: drop it (never logging its text) and keep the connection.
+  function drop(reason: string): void { console.warn(`[speech] ElevenLabs final dropped: ${reason}`); }
+
   function onMessage(raw: RawData): void {
     if (stopped) return;
     let message: Record<string, unknown>;
@@ -196,8 +201,12 @@ export function createElevenLabsProvider(
     // the latter. Partial, edited, and other non-final messages are ignored.
     if (type !== 'committed_transcript_with_timestamps') return;
     if (typeof message.text !== 'string' || !message.text.trim()) return;
-    if (!ready || !Array.isArray(message.words) || message.words.length === 0) {
+    if (!ready) {
       fail('received a transcript without valid timestamps');
+      return;
+    }
+    if (!Array.isArray(message.words) || message.words.length === 0) {
+      drop('no word timestamps');
       return;
     }
     let startMs = Infinity;
@@ -206,7 +215,7 @@ export function createElevenLabsProvider(
     const words: TimedWord[] = [];
     for (const entry of message.words) {
       if (!entry || typeof entry !== 'object') {
-        fail('received invalid word timestamps');
+        drop('invalid word timestamps');
         return;
       }
       const word = entry as Record<string, unknown>;
@@ -214,7 +223,7 @@ export function createElevenLabsProvider(
       if (typeof word.start !== 'number' || typeof word.end !== 'number'
         || !Number.isFinite(word.start) || !Number.isFinite(word.end)
         || word.start < 0 || word.end < word.start || word.start < previousStart) {
-        fail('received invalid word timestamps');
+        drop('invalid word timestamps');
         return;
       }
       previousStart = word.start;
@@ -236,17 +245,18 @@ export function createElevenLabsProvider(
       priorEnd = Math.max(priorEnd, word.endMs);
     }
     markCluster();
-    // Never invent ranges or clamp provider drift into unrelated PCM. A single
-    // sample's tolerance only accommodates floating-point serialization.
+    // Never invent ranges or map provider drift into unrelated PCM. Rounded timestamps may run up to
+    // DRIFT_MS past the audio sent; those ends are trimmed back to it. Anything further out is dropped.
     const sentMs = sentBytes / BYTES_PER_MS;
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)
-      || endMs <= startMs || startMs >= sentMs || endMs > sentMs + 1 / 16) {
-      fail('received timestamps outside the audio stream');
+      || endMs <= startMs || startMs >= sentMs || endMs > sentMs + DRIFT_MS) {
+      drop('timestamps outside the audio stream');
       return;
     }
+    for (const word of words) word.endMs = Math.min(word.endMs, sentMs);
     const sentences = splitSentences(message.text, words, sentMs);
     if (!sentences) {
-      fail('cannot safely align sentence timestamps');
+      drop('cannot safely align sentence timestamps');
       return;
     }
     for (const utterance of sentences) {

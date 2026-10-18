@@ -203,7 +203,7 @@ test('ElevenLabs does not split common honorifics or decimal points', async () =
   } finally { await provider.close(); }
 });
 
-test('ElevenLabs fails closed before emitting any sentence if alignment is incomplete or unsafe', async () => {
+test('ElevenLabs drops a commit it cannot align, before emitting any sentence, and keeps the connection', async () => {
   for (const words of [
     combinedCommit.words.filter((word) => word.text !== 'time'),
     combinedCommit.words.map((word) => word.text === 'lunch?' ? { ...word, text: 'dinner?' } : word),
@@ -214,8 +214,8 @@ test('ElevenLabs fails closed before emitting any sentence if alignment is incom
     provider.sendAudio(new Uint8Array(64_000));
     socket.message({ ...combinedCommit, words });
     assert.deepEqual(utterances, []);
-    assert.equal(errors.length, 1);
-    assert.match(errors[0]!.message, /align sentence/);
+    assert.equal(errors.length, 0);
+    assert.equal(socket.terminated, false);
     await provider.close();
   }
 });
@@ -244,15 +244,16 @@ for (const [name, words] of [
   ['nonfinite', [{ start: null, end: 0.5 }]],
   ['unordered words', [{ start: 0.5, end: 0.6 }, { start: 0.1, end: 0.2 }]],
 ] as const) {
-  test(`ElevenLabs rejects ${name} timestamps without fabricated utterances`, async () => {
+  test(`ElevenLabs drops ${name} timestamps without fabricated utterances and keeps transcribing`, async () => {
     const { provider, socket, utterances, errors } = setup();
     socket.message({ message_type: 'session_started' });
     provider.sendAudio(new Uint8Array(32_000));
     socket.message({ ...transcript(), words });
-    socket.message(transcript());
-    assert.equal(errors.length, 1);
-    assert.equal(socket.terminated, true);
     assert.deepEqual(utterances, []);
+    socket.message(transcript());
+    assert.equal(errors.length, 0);
+    assert.equal(socket.terminated, false);
+    assert.equal(utterances.length, 1);
     await provider.close();
   });
 }

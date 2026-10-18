@@ -241,18 +241,19 @@ test('honorific abbreviations do not split or truncate an answer', async () => {
   await h.close();
 });
 
-test('final word rounding within one sample clamps to sent PCM, larger drift fails', async () => {
+test('final word rounding up to 20 ms clamps to sent PCM; larger drift is dropped, not fatal', async () => {
   const good = harness();
   good.socket.open(); good.audio(1);
-  good.socket.result(result([word('Okay.', 0.1, 1.00004)], true));
+  good.socket.result(result([word('Okay.', 0.1, 1.015)], true));
   assert.equal(good.utterances[0]?.endMs, 1000);
   assert.equal(good.errors.length, 0);
   await good.close();
   const bad = harness();
   bad.socket.open(); bad.audio(1);
-  bad.socket.result(result([word('Drift.', 0.1, 1.0005)], true));
+  bad.socket.result(result([word('Drift.', 0.1, 1.03)], true));
   assert.equal(bad.utterances.length, 0);
-  assert.equal(bad.errors.length, 1);
+  assert.equal(bad.errors.length, 0);
+  assert.equal(bad.socket.terminated, false);
   await bad.close();
 });
 
@@ -269,24 +270,24 @@ test('a reentrant terminal failure while emitting stops the remaining final sent
   await h.close();
 });
 
-test('rejects malformed word timing without leaking provider data', async () => {
+test('skips reversed or zero-length word timing without failing the connection', async () => {
   const h = harness();
   h.socket.open(); h.audio();
   h.socket.result(result([word('secret-Deepgram', 1, 0.5)], true));
-  assert.equal(h.utterances.length, 0);
-  assert.equal(h.errors.length, 1);
-  assert.equal(h.errors[0]?.message.includes('secret'), false);
-  assert.equal(h.socket.terminated, true);
+  h.socket.result(result([word('Blip', 0.2, 0.2), word('Okay.', 0.3, 0.6)], true));
+  assert.deepEqual(h.utterances.map(u => u.text), ['Okay.']);
+  assert.equal(h.errors.length, 0);
+  assert.equal(h.socket.terminated, false);
   await h.close();
 });
 
-test('rejects timestamps outside sent PCM and drops events after a failure', async () => {
+test('drops a final with timestamps outside sent PCM and keeps transcribing', async () => {
   const h = harness();
   h.socket.open(); h.audio(1);
   h.socket.result(result([word('Impossible.', 4, 5)], true));
   h.socket.result(result([word('Late.', 0, 0.3)], true));
-  assert.equal(h.errors.length, 1);
-  assert.equal(h.utterances.length, 0);
+  assert.equal(h.errors.length, 0);
+  assert.deepEqual(h.utterances.map(u => u.text), ['Late.']);
   await h.close();
 });
 

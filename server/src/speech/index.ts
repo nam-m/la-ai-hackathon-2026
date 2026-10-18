@@ -100,6 +100,22 @@ export function createSpeechModule(opts: SpeechOptions): ConfigurableSpeechModul
     stopProvider();
     report(error);
   }
+  // A dropped or failing provider connection is retried before transcription is reported as down:
+  // the dead connection is closed and the next audio frame reconnects (the same path as an idle
+  // ElevenLabs close), so no frames are skipped and the source clock mapping is unchanged.
+  const RETRY_LIMIT = 3;
+  const RETRY_WINDOW_MS = 60_000;
+  let retries: number[] = [];
+  function retryOrFail(error: Error): void {
+    if (closed || failed || paused) return;
+    const t = now();
+    retries = retries.filter(at => t - at < RETRY_WINDOW_MS);
+    if (retries.length >= RETRY_LIMIT) { fail(error); return; }
+    retries.push(t);
+    generation++;
+    stopProvider();
+    console.warn(`[speech] provider connection failed; reconnecting on next audio (${retries.length}/${RETRY_LIMIT})`);
+  }
   function emit(u: Utterance): void {
     if (closed || paused || failed) return;
     const current = generation;
@@ -168,7 +184,7 @@ export function createSpeechModule(opts: SpeechOptions): ConfigurableSpeechModul
     try {
       provider = factory({ apiKey: opts.apiKey,
         onUtterance(u) { if (current === generation && !closed && !paused && !failed) receive({ ...u, startMs: u.startMs + offset, endMs: u.endMs + offset }); },
-        onError(e) { if (current === generation) fail(e); } });
+        onError(e) { if (current === generation) retryOrFail(e); } });
       if (failed || closed || paused) stopProvider();
     } catch (error) { fail(error instanceof Error ? error : new Error('Could not start speech provider')); }
   }

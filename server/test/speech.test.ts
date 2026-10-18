@@ -39,8 +39,8 @@ function harness(overrides: Partial<SpeechOptions> = {}) {
 }
 
 test('questions use punctuation and bounded question prefixes', () => {
-  for (const text of ['What time is lunch', 'When’s lunch?', 'Is Sarah here', 'Lunch is when?', '“Where is Mary?”']) assert.equal(isQuestion(text), true, text);
-  for (const text of ['Lunch is at noon.', 'Whatever works.', 'Sarah is here.', '']) assert.equal(isQuestion(text), false, text);
+  for (const text of ['What time is lunch', 'When’s lunch?', 'Is Sarah here', 'Lunch is when?', '“Where is Mary?”', 'Who\'s that', 'Can you help?']) assert.equal(isQuestion(text), true, text);
+  for (const text of ['Lunch is at noon.', 'Whatever works.', 'Sarah is here.', '', 'Can\'t find my keys.', 'Can’t find my keys', 'What a lovely day!', 'Do it now.', 'Have a good one.']) assert.equal(isQuestion(text), false, text);
 });
 
 test('loud wearer question fires immediately; quiet answer captured verbatim once', async () => {
@@ -165,11 +165,41 @@ test('pause clears pending pairs and suppresses late old-connection results', as
   } finally { await h.speech.close(); }
 });
 
+// Fail the provider until the reconnect budget (3 per minute) is spent, so transcription is reported down.
+function exhaustReconnects(h: ReturnType<typeof harness>, error = new Error('disconnected')) {
+  for (let attempt = 0; attempt < 3; attempt++) { h.connections.at(-1)!.onError(error); h.push(100); }
+  h.connections.at(-1)!.onError(error);
+}
+
+test('a dropped provider connection reconnects on the next audio and keeps the source clock', async () => {
+  const h = harness();
+  try {
+    h.push(500); h.say('When is lunch?', 0, 500);
+    h.connections[0]!.onError(new Error('lost connection'));
+    assert.equal(h.errors.length, 0);
+    h.push(500); h.say('At noon.', 0, 500);
+    assert.equal(h.connections.length, 2);
+    assert.equal(h.errors.length, 0);
+    assert.equal(h.utterances[1]!.startMs, 500);
+    assert.equal(h.utterances[1]!.endMs, 1000);
+  } finally { await h.speech.close(); }
+});
+
+test('transcription is reported down only after 3 reconnects within a minute', async () => {
+  const h = harness();
+  try {
+    h.push(500);
+    exhaustReconnects(h);
+    assert.equal(h.connections.length, 4);
+    assert.equal(h.errors.length, 1);
+  } finally { await h.speech.close(); }
+});
+
 test('provider failure invalidates pending setup before resume', async () => {
   const h = harness({ provider: 'deepgram', wearerThresholdDb: undefined });
   try {
     h.speech.calibrateNextSpeaker({ isWearer: true });
-    h.connections[0]!.onError(new Error('disconnected'));
+    exhaustReconnects(h);
     h.speech.resume(); h.push(500); h.say('When is lunch?', 0, 500, '4');
     assert.equal(h.errors.length, 1); assert.equal(h.utterances.length, 1); assert.equal(h.questions.length, 0);
   } finally { await h.speech.close(); }
@@ -313,12 +343,12 @@ test('source clock counts PCM accepted during provider failure before a fresh co
   const h = harness();
   try {
     h.push(500); h.say('When is lunch?', 0, 500);
-    h.connections[0]!.onError(new Error('lost connection'));
+    exhaustReconnects(h, new Error('lost connection')); // 3 x 100 ms of audio while reconnecting
     h.push(2000, 0); h.advance(90_000);
     h.speech.resume(); h.push(500, 500); h.say('At noon.', 0, 500);
     assert.equal(h.errors.length, 1);
-    assert.equal(h.utterances[1]!.startMs, 2500);
-    assert.equal(h.utterances[1]!.endMs, 3000);
+    assert.equal(h.utterances[1]!.startMs, 2800);
+    assert.equal(h.utterances[1]!.endMs, 3300);
     assert.equal(h.pairs.length, 0);
   } finally { await h.speech.close(); }
 });
@@ -365,6 +395,9 @@ test('fake scripts support the main pipe format, named others, unknowns, and leg
     assert.deepEqual(pipe.map(u => [u.endMs, u.role, u.isWearer, u.name, u.text]), [
       [1000, 'wearer', true, null, 'When is lunch?'], [3000, 'other', false, 'Sarah', 'Noon | exactly.'], [4000, 'unknown', false, null, 'Unclear.'],
     ]);
+    // Role keywords are case-insensitive; names keep their case.
+    writeFileSync(path, '1 | Wearer | When is lunch?\n1 | UNKNOWN | Unclear.\n1 | Sarah | Noon.\n');
+    assert.deepEqual(readFakeScript(path).map(u => [u.role, u.name]), [['wearer', null], ['unknown', null], ['other', 'Sarah']]);
     writeFileSync(path, '500\twearer\t-\tWhen is lunch?\n1000\tother\tSarah\tAt noon.\n1500\tunknown\t-\tUnclear.\n');
     assert.deepEqual(readFakeScript(path).map(u => u.role), ['wearer', 'other', 'unknown']);
     for (const invalid of ['0 | wearer | Bad.', '-1 | Sarah | Bad.', 'x | unknown | Bad.', '1 | | Bad.', '500\tnobody\t-\tBad.']) {
