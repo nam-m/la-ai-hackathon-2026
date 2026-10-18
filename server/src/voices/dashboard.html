@@ -45,7 +45,7 @@
   .log { font: 12px/1.5 var(--mono); max-height: 520px; overflow: auto; }
   .log div { padding: 3px 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 64px 92px 1fr; gap: 8px; }
   .log .t { color: var(--faint); } .log .k { white-space: nowrap; }
-  .k.heard, .k.learned { color: var(--known); } .k.shown { color: var(--known); font-weight: 700; } .k.new_voice, .k.name_found { color: var(--accent); } .k.named { color: var(--known); font-weight: 700; }
+  .k.heard, .k.learned, .k.enrolled { color: var(--known); } .k.shown { color: var(--known); font-weight: 700; } .k.new_voice, .k.name_found { color: var(--accent); } .k.named { color: var(--known); font-weight: 700; }
   .k.unknown, .k.too_short, .k.wearer_like, .k.wearer, .k.no_name { color: var(--dim); } .k.rejected, .k.name_lost, .k.error { color: var(--bad); }
   .log .d { overflow-wrap: anywhere; } .log .d i { color: var(--dim); font-style: normal; }
   .transcript { max-height: 520px; overflow: auto; }
@@ -59,6 +59,11 @@
   .worry { display: inline-block; width: 80px; height: 8px; background: var(--bar); border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 6px; }
   .worry span { display: block; height: 100%; background: var(--unknown); }
   .emo { font: 12px var(--mono); color: var(--dim); }
+  .enroll { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 12px; }
+  .enroll input { font: 14px inherit; padding: 5px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; width: 160px; }
+  .phrases { border: 1px solid var(--accent); border-radius: 8px; padding: 10px 14px; margin: 0 0 12px; }
+  .phrases ol { margin: 6px 0 0; padding-left: 22px; font-size: 18px; line-height: 1.6; }
+  .phrases .count { font: 600 22px var(--mono); color: var(--accent); }
   .keybox { padding: 40px 20px; max-width: 520px; }
   .keybox input { width: 100%; font: 14px var(--mono); padding: 8px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; margin: 10px 0; }
   @media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); padding: 12px 16px 32px; } header { padding: 12px 16px; } .threshold { margin-left: 0; } }
@@ -80,6 +85,8 @@ const KEY_STORE = 'rewind-voices-key'
 let key = new URLSearchParams(location.hash.slice(1)).get('key') || ''
 try { if (key) localStorage.setItem(KEY_STORE, key); else key = localStorage.getItem(KEY_STORE) || '' } catch {}
 let state = null, dragging = false
+let enrollName = ''
+let enrollPhrases = ['Hello, it is really nice to see you today.', 'I will come by again on Sunday morning with the newspaper.', 'Would you like a cup of tea with milk and sugar?', 'We can take a slow walk in the garden after lunch.', 'The quick brown fox jumps over the lazy dog.']
 
 function h(tag, attrs, ...kids) {
   const el = document.createElement(tag)
@@ -204,6 +211,29 @@ async function clearHome() {
   try { await api('/location/home', { method: 'DELETE' }); tick() } catch (e) { alert(e.message) }
 }
 
+function enrollBox() {
+  const e = (state.sessions || []).map(s => s.enrollment).find(Boolean)
+  const input = h('input', { id: 'enroll-name', placeholder: 'Name, e.g. Kevin', value: enrollName })
+  input.addEventListener('input', () => { enrollName = input.value })
+  input.addEventListener('keydown', ev => { if (ev.key === 'Enter') startEnroll() })
+  const busy = e && (e.state === 'recording' || e.state === 'saving')
+  const form = h('div', { class: 'enroll' }, h('b', {}, 'Record a voice:'), input,
+    h('button', { onclick: startEnroll, disabled: busy || undefined }, 'Record 12 s from the glasses'),
+    e && e.state === 'done' ? h('span', { class: 'ok' }, `✓ ${e.message}`) : null,
+    e && e.state === 'failed' ? h('span', { class: 'err' }, `✗ ${e.message}`) : null)
+  if (!busy) return [form]
+  return [form, h('div', { class: 'phrases' },
+    h('div', {}, e.state === 'recording' ? h('span', { class: 'count' }, `${e.left}s `) : h('span', { class: 'count' }, 'saving… '),
+      e.state === 'recording' ? `${e.name}: read these aloud, close to the patient. Only ${e.name} should talk.` : ''),
+    e.state === 'recording' ? h('ol', {}, enrollPhrases.map(p => h('li', {}, p))) : null)]
+}
+
+async function startEnroll() {
+  const name = enrollName.trim()
+  if (!name) return alert('Type the name first.')
+  try { const r = await api('/voices/enroll', { method: 'POST', body: JSON.stringify({ name }) }); if (r.phrases) enrollPhrases = r.phrases; tick() } catch (e) { alert(e.message) }
+}
+
 function voicesSection() {
   const rows = (state.voices || []).map(v => h('tr', {},
     h('td', {}, h('b', { class: v.saved ? 'ok' : 'warn' }, v.label), ' ', h('span', { class: 'tag ' + (v.saved ? 'ok' : 'warn') }, v.saved ? 'saved' : 'temporary'),
@@ -213,7 +243,7 @@ function voicesSection() {
     h('td', { title: v.lastSeenAt }, ago(v.lastSeenAt)),
     h('td', { title: v.createdAt }, time(v.createdAt)),
     h('td', {}, h('button', { onclick: () => rename(v) }, v.saved ? 'Rename' : 'Name'), ' ', h('button', { onclick: () => showOnGlasses(v.label) }, 'Show on glasses'), ' ', h('button', { class: 'danger', onclick: () => remove(v) }, 'Delete'))))
-  return h('section', {}, h('h2', {}, `Voices (${(state.voices || []).length})`),
+  return h('section', {}, h('h2', {}, `Voices (${(state.voices || []).length})`), enrollBox(),
     rows.length ? h('table', {}, h('tr', {}, ['Voice', 'Samples', 'Heard', 'Last heard', 'Created', ''].map(t => h('th', {}, t))), rows)
       : h('div', { class: 'empty' }, 'Nobody remembered yet. A voice appears after about 3 s of one person talking; it is saved when their name is heard.'))
 }
@@ -254,9 +284,11 @@ function render() {
   toneEl.textContent = `tone: ${tone.state || '?'}`
   if (!dragging) { document.getElementById('thr').value = state.threshold; document.getElementById('thrv').textContent = state.threshold.toFixed(2) }
   const scroll = document.querySelector('.log')?.scrollTop ?? 0 // the page redraws every second; keep the log where it was
+  const typing = document.activeElement?.id === 'enroll-name' ? document.activeElement.selectionStart : null
   document.getElementById('root').replaceChildren(h('main', {}, nowSection(), locationSection(), voicesSection(), answersSection(), toneSection(), eventsSection(), transcriptSection()))
   const log = document.querySelector('.log')
   if (log) log.scrollTop = scroll
+  if (typing !== null) { const el = document.getElementById('enroll-name'); el?.focus(); el?.setSelectionRange(typing, typing) }
 }
 
 async function showOnGlasses(name) {

@@ -36,7 +36,7 @@ const ADDRESSED_AFTER_MS = 15_000 // "Hi Tom!": otherwise the next other turn st
 const SPEAKER_REPEAT_MS = 3000 // the same name goes to the glasses at most this often
 const CONTEXT_LINES = 6
 
-export type VoiceEventKind = 'heard' | 'shown' | 'unknown' | 'new_voice' | 'learned' | 'wearer' | 'wearer_like' | 'too_short'
+export type VoiceEventKind = 'heard' | 'shown' | 'enrolled' | 'unknown' | 'new_voice' | 'learned' | 'wearer' | 'wearer_like' | 'too_short'
   | 'no_name' | 'name_found' | 'named' | 'rejected' | 'name_lost' | 'error'
 export type VoiceEvent = {
   at: string
@@ -78,6 +78,8 @@ export type TrackerDeps = {
   extractName: (lines: NameLine[]) => Promise<NameFinding | null>
   /** Audio on the utterance clock, or null if it has rolled off. */
   clip: (startMs: number, endMs: number) => Uint8Array | null
+  /** How much audio has arrived, on the utterance clock (for recording a voice from the dashboard). */
+  audioClock?: () => number
   send: (msg: ServerMessage) => boolean | void
   gallery?: Gallery
 }
@@ -97,6 +99,17 @@ type Turn = {
 
 export const trackers = new Set<VoiceTracker>()
 
+/** What the person reads aloud while their voice is recorded: about 12 s, varied sounds, no names. */
+export const ENROLL_PHRASES = [
+  'Hello, it is really nice to see you today.',
+  'I will come by again on Sunday morning with the newspaper.',
+  'Would you like a cup of tea with milk and sugar?',
+  'We can take a slow walk in the garden after lunch.',
+  'The quick brown fox jumps over the lazy dog.',
+]
+export const ENROLL_SECONDS = 12
+type Enrollment = { name: string; startMs: number; startedAt: number; seconds: number; state: 'recording' | 'saving' | 'done' | 'failed'; message?: string }
+
 export class VoiceTracker {
   private turn: Turn | null = null
   private lastTurn: Turn | null = null
@@ -110,6 +123,7 @@ export class VoiceTracker {
   private lastSpeaker = { name: '', at: 0 }
   private learningWearer = false
   private namedCallbacks = new Map<string, ((name: string) => void)[]>() // voice id -> waiting for its name
+  private enrollment: Enrollment | null = null
   /** The newest check, for the dashboard. */
   live: { at: string; voiceId: string | null; voice: string | null; score: number; scores: Record<string, number>; wearer: number } | null = null
 
@@ -121,6 +135,8 @@ export class VoiceTracker {
   private log(e: Omit<VoiceEvent, 'at' | 'session'>) { logEvent({ at: new Date().toISOString(), session: this.session, ...e }) }
 
   onUtterance(u: Utterance, transcriptId: string) {
+    // While a voice is being recorded on the dashboard, its phrases must not make or name voices on their own.
+    if (this.enrollment?.state === 'recording' || this.enrollment?.state === 'saving') return
     if (u.role === 'wearer') {
       this.endTurn()
       void this.checkTagged(u, 'wearer')
@@ -163,9 +179,41 @@ export class VoiceTracker {
     this.namedCallbacks.set(voiceId, list)
   }
 
+  /** Record the next `seconds` of the glasses' audio as `name`'s voice. Only the person being recorded should talk. */
+  startEnroll(name: string, seconds = ENROLL_SECONDS) {
+    if (this.enrollment?.state === 'recording' || this.enrollment?.state === 'saving') return false
+    const clock = this.deps.audioClock?.() ?? 0
+    const e: Enrollment = { name, startMs: clock, startedAt: Date.now(), seconds, state: 'recording' }
+    this.enrollment = e
+    this.log({ kind: 'enrolled', voice: name, detail: `recording ${seconds} s from the glasses: read the phrases` })
+    setTimeout(() => void this.finishEnroll(e), seconds * 1000).unref()
+    return true
+  }
+
+  private async finishEnroll(e: Enrollment) {
+    if (this.enrollment !== e) return
+    e.state = 'saving'
+    const fail = (message: string) => {
+      e.state = 'failed'
+      e.message = message
+      this.log({ kind: 'rejected', voice: e.name, detail: `voice recording: ${message}` })
+    }
+    const clip = this.deps.clip(e.startMs, this.deps.audioClock?.() ?? e.startMs)
+    if (!clip || clip.byteLength < 32_000) return fail('no audio from the glasses (paused, or the mic is off)')
+    const r = await this.deps.embed(clip)
+    if (!r.ok) return fail(r.reason === 'too_short' ? 'almost no speech in the recording' : `voice service: ${r.error ?? r.reason}`)
+    const res = this.gallery.enroll(e.name, r.print)
+    if (!res.ok) return fail(res.reason)
+    e.state = 'done'
+    e.message = res.how === 'new' ? `${res.voice.name} saved as a new voice` : res.how === 'named' ? `${label(res.voice)} was ${res.voice.name}: name attached to the voice already heard` : `another sample added to ${res.voice.name}`
+    this.log({ kind: 'enrolled', voiceId: res.voice.id, voice: label(res.voice), seconds: r.print.seconds, detail: e.message })
+  }
+
   snapshot() {
     const t = this.turn
+    const e = this.enrollment
     return {
+      enrollment: e ? { name: e.name, state: e.state, message: e.message ?? null, left: Math.max(0, Math.ceil(e.seconds - (Date.now() - e.startedAt) / 1000)) } : null,
       session: this.session,
       live: this.live,
       turn: t ? { voice: this.label(t.voiceId), seconds: +((t.endMs - t.startMs) / 1000).toFixed(1), pendingName: t.pendingName?.finding.name ?? null } : null,

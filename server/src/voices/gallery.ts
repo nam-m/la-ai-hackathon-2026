@@ -155,6 +155,46 @@ export class Gallery {
     return { ok: true, voice: v, merged: false }
   }
 
+  /**
+   * A voice recorded on the dashboard with its name: names the matching anonymous voice, adds a sample to the voice
+   * already saved under that name, or makes a new named voice. Refused when the recording isn't one clear voice.
+   */
+  enroll(rawName: string, print: Voiceprint, now = new Date()): { ok: true; voice: VoiceRecord; how: 'new' | 'named' | 'added' } | { ok: false; reason: string } {
+    const name = cleanName(rawName)
+    if (!name) return { ok: false, reason: `"${rawName}" is not a name` }
+    if (print.seconds < VOICE.MIN_SAMPLE_SEC || !print.first || !print.second) return { ok: false, reason: `only ${print.seconds}s of speech: read the phrases aloud, close to the glasses` }
+    if (!Gallery.oneVoice(print)) return { ok: false, reason: 'two voices in the recording: only the person being recorded should speak' }
+    const at = now.toISOString()
+    const evidence: NameEvidence = { text: '(voice recorded on the dashboard)', kind: 'manual', confidence: 1, by: 'dashboard', at }
+    const add = (v: VoiceRecord) => {
+      v.samples = [...v.samples, round(print.whole)]
+      if (v.samples.length > VOICE.MAX_SAMPLES) v.samples = [v.samples[0], ...v.samples.slice(-(VOICE.MAX_SAMPLES - 1))]
+      v.lastSeenAt = at
+    }
+    const twin = this.byName(name)
+    if (twin) {
+      const like = score(print.whole, twin.samples)
+      if (like < VOICE.MIN_SAME) return { ok: false, reason: `doesn't sound like the ${name} already saved (${round3(like)}); delete that one first if it was wrong` }
+      add(twin)
+      this.persist.save(twin)
+      return { ok: true, voice: twin, how: 'added' }
+    }
+    const id = this.identify(print.whole, null)
+    const match = id.id ? this.get(id.id) : undefined
+    if (match?.name) return { ok: false, reason: `sounds like ${match.name} (${id.score}); rename them instead if that's the same person` }
+    if (match) {
+      match.name = name
+      match.evidence = evidence
+      add(match)
+      this.persist.save(match)
+      return { ok: true, voice: match, how: 'named' }
+    }
+    const v: VoiceRecord = { id: `voice_${now.getTime().toString(36)}${this.nextSeq}`, seq: this.nextSeq++, name, samples: [round(print.whole)], createdAt: at, lastSeenAt: at, heard: 0, evidence }
+    this.voices.set(v.id, v)
+    this.persist.save(v)
+    return { ok: true, voice: v, how: 'new' }
+  }
+
   /** What a person said about themselves, shown for "Who is Kevin?" and "Who are you?". */
   setAbout(id: string, text: string, at: string) {
     const v = this.get(id)

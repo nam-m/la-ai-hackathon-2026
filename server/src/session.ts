@@ -95,6 +95,7 @@ export class Session {
         embed: dependencies.embedVoice ?? voiceClient.embed,
         extractName: dependencies.extractName ?? extractName,
         clip: (startMs, endMs) => this.ring.get(Math.max(0, startMs), Math.min(endMs, this.ring.receivedMs)),
+        audioClock: () => this.ring.receivedMs,
         send: msg => !this.closed && !this.paused && this.send(msg),
       })
     }
@@ -251,6 +252,15 @@ export class Session {
     })
     return lookup
   }
+
+  /** Record a visitor's voice from these glasses (debug dashboard). */
+  startEnroll(name: string) {
+    if (!this.voices) return 'voice recognition is off (set VOICE_URL)'
+    if (this.paused) return 'the glasses are paused: resume first'
+    return this.voices.startEnroll(name) ? null : 'a recording is already running'
+  }
+
+  get sessionName() { return this.name }
 
   /** For the debug dashboard. */
   locationSnapshot() {

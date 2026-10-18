@@ -9,7 +9,7 @@ import { sessions } from '../session.js'
 import * as store from '../store.js'
 import { voiceStatus } from './client.js'
 import { VOICE, label } from './gallery.js'
-import { gallery, trackers, voiceEvents } from './tracker.js'
+import { ENROLL_PHRASES, ENROLL_SECONDS, gallery, trackers, voiceEvents } from './tracker.js'
 
 const PAGE = new URL('./dashboard.html', import.meta.url)
 
@@ -88,6 +88,18 @@ export function voiceRoutes(requireSecret: RequestHandler) {
     const removed = gallery().remove(req.params.id)
     if (removed) console.log(`[voice] ${req.params.id} deleted on the dashboard`)
     res.json({ removed })
+  })
+
+  // Record a voice from the glasses and attach a name: the person reads the phrases aloud for ENROLL_SECONDS.
+  r.post('/voices/enroll', requireSecret, (req, res) => {
+    const name = String(req.body?.name ?? '').trim()
+    if (!name) return void res.status(400).json({ error: 'type a name first' })
+    const all = [...sessions]
+    const session = all.find(s => s.sessionName === req.body?.session) ?? all[all.length - 1]
+    if (!session) return void res.status(400).json({ error: 'no glasses connected' })
+    const problem = session.startEnroll(name)
+    if (problem) return void res.status(400).json({ error: problem })
+    res.json({ phrases: ENROLL_PHRASES, seconds: ENROLL_SECONDS, session: session.sessionName })
   })
 
   // Show a name on every connected pair of glasses, to check the display end to end without the voice path.

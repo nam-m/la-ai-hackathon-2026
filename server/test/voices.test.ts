@@ -397,3 +397,39 @@ test('tracker: "I\'m Kevin." said first after a long break goes to the unnamed v
   await say('other', 3000, 7000, 'I come by on Sundays to read the paper with you.'); // recognized as the anonymous voice
   assert.equal(g.get(anon.id)?.name, 'Kevin');
 });
+
+test('gallery: a voice recorded on the dashboard is named, added to, or refused', () => {
+  const g = new Gallery(memory().persist, 0.47);
+  const anon = g.createUnnamed(print(SARAH)) as VoiceRecord;
+  const named = g.enroll('sarah', print(SARAH));
+  assert.ok(named.ok && named.how === 'named' && named.voice.id === anon.id && named.voice.name === 'Sarah');
+  const fresh = g.enroll('Kevin', print(KEVIN));
+  assert.ok(fresh.ok && fresh.how === 'new');
+  const again = g.enroll('Kevin', print(unit(1, 0.3)));
+  assert.ok(again.ok && again.how === 'added' && again.voice.samples.length === 2);
+  assert.match((g.enroll('Bob', print(KEVIN)) as { reason: string }).reason, /sounds like Kevin/);
+  assert.match((g.enroll('Ann', { whole: KEVIN, first: KEVIN, second: SARAH, seconds: 8, ms: 1 }) as { reason: string }).reason, /two voices/);
+  assert.match((g.enroll('Ann', print(WEARER, 2)) as { reason: string }).reason, /only 2s of speech/);
+});
+
+test('tracker: recording a voice from the glasses takes the audio of the recording window', async () => {
+  const g = new Gallery(memory().persist, 0.47);
+  let clock = 5000;
+  const clips: [number, number][] = [];
+  const t = new VoiceTracker({
+    session: () => 'test', gallery: g,
+    clip: (startMs, endMs) => { clips.push([startMs, endMs]); return new Uint8Array(Math.round((endMs - startMs) * 32)); },
+    audioClock: () => clock,
+    embed: async pcm => ({ ok: true, print: print(KEVIN, pcm.byteLength / 32_000) }),
+    extractName: async () => null,
+    send: () => {},
+  });
+  assert.equal(t.startEnroll('Kevin', 0.05), true);
+  assert.equal(t.startEnroll('Kevin', 0.05), false); // one at a time
+  assert.equal(t.snapshot().enrollment?.state, 'recording');
+  clock = 17_000; // 12 s of audio arrived
+  await new Promise(done => setTimeout(done, 120));
+  assert.deepEqual(clips.at(-1), [5000, 17_000]);
+  assert.equal(t.snapshot().enrollment?.state, 'done');
+  assert.equal(g.byName('kevin')?.samples.length, 1);
+});
