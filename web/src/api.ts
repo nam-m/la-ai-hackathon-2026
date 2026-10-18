@@ -1,4 +1,4 @@
-import type { DaySummary, FactInput, Health, LogToday, QARecord, Settings } from './types'
+import type { CareRun, DaySummary, FactInput, Health, LogToday, OpenQuestionsResult, PatternsResult, QARecord, Settings } from './types'
 
 // Empty in dev (Vite proxies to the server); the server's public URL in production.
 const BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
@@ -54,6 +54,12 @@ export const api = {
   deleteFact: (id: string) => request<{ removed: boolean }>(`/facts/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   summary: () => request<{ summary: DaySummary | null }>('/summary/today').then(r => r.summary),
   generateSummary: () => request<{ runId: string }>('/creao/summary', { method: 'POST' }),
+  openQuestions: () => request<{ openQuestions: OpenQuestionsResult | null }>('/creao/open-questions/today').then(r => r.openQuestions),
+  findOpenQuestions: () => request<{ runId: string }>('/creao/open-questions', { method: 'POST' }),
+  patterns: () => request<{ patterns: PatternsResult | null }>('/creao/patterns/today').then(r => r.patterns),
+  findPatterns: () => request<{ runId: string }>('/creao/patterns', { method: 'POST' }),
+  askCare: (role: 'caregiver' | 'clinician', text: string) => request<{ runId: string }>('/creao/care', { method: 'POST', body: { role, request: text } }),
+  careRun: (runId: string) => request<CareRun>(`/creao/care/${encodeURIComponent(runId)}`),
   settings: () => request<Settings>('/settings'),
   saveSettings: (s: Settings) => request<Settings>('/settings', { method: 'POST', body: s }),
 }

@@ -40,3 +40,30 @@ export type Settings = { toneAnalysis: boolean }
 
 /** D's Creao summary; only `summary` is relied on, the rest stays loose. */
 export type DaySummary = { date: string; summary?: string; text?: string; generatedAt?: string } & Record<string, unknown>
+
+// ---- CREAO agent results (server/src/creao, routes under /creao). Loose on purpose: only the fields shown are read. ----
+
+export type OpenQuestion = {
+  cluster_id: string
+  canonical_question: string
+  count: number
+  distinct_times_of_day?: number
+  suggested_answer?: string | null
+}
+export type OpenQuestionsResult = { open_questions?: OpenQuestion[]; generatedAt?: string } & Record<string, unknown>
+
+export type Pattern = { cluster: string; days_seen: number; total_count: number; time_window?: string; note?: string }
+export type PatternsResult = { patterns?: Pattern[]; insufficient_data?: boolean; generatedAt?: string } & Record<string, unknown>
+
+/** What the Care assistant returns. It only proposes: nothing changes until a person approves. */
+export type CareResult = {
+  role?: 'caregiver' | 'clinician'
+  intent?: string
+  proposal?: { action?: string; replaces_fact_id?: string | null; question?: string; answer_wording?: string; valid_until?: string } | null
+  clarifying_question?: string | null
+  settings_change?: { key: string; from: unknown; to: unknown } | null
+  preview?: { before?: unknown; after?: unknown } | null
+  rejected_reason?: string | null
+  note?: string | null
+}
+export type CareRun = { v: 1; status: 'running' | 'done' | 'failed'; result?: CareResult; error?: string }

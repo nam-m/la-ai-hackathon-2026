@@ -96,7 +96,7 @@ export async function runSummary(dateIso: string): Promise<string> {
 export async function runPatterns(dateIso: string): Promise<string> {
   const dates = datesEnding(dateIso, 7)
   return launch('patternFinder', 'patterns', { end_date: dateIso, data_json: dataJsonFor(dates) }, out =>
-    store.savePatterns({ ...out, toIso: dateIso }))
+    store.savePatterns({ ...out, toIso: dateIso, generatedAt: new Date().toISOString() }))
 }
 
 /** Open Questions over the 7 local dates ending at `dateIso`: what the glasses could not answer, filed under that date. */

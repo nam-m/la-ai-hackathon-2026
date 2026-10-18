@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { CareAssistantCard, OpenQuestionsCard, PatternsCard } from '../components/AgentCards'
 import { Check, Clock, Sparkle, Sun, TrendDown, TrendFlat, TrendUp, Warn } from '../components/Icons'
 import { greetingWord, time, WEARER } from '../lib/format'
 import type { DashboardData } from '../lib/useDashboard'
@@ -17,9 +18,11 @@ type Props = {
   onSummary: (s: DaySummary | null) => void
   onFix: (fact: QARecord, contradiction: Contradiction) => void
   onAddPlan: () => void
+  refresh: () => Promise<void>
+  onAnswer: (question: string) => void
 }
 
-export function Today({ data, lastGood, name, guard, onSummary, onFix, onAddPlan }: Props) {
+export function Today({ data, lastGood, name, guard, onSummary, onFix, onAddPlan, refresh, onAnswer }: Props) {
   const h = data.health
   const status = !h ? 'Unknown' : h.sessions === 0 ? 'Offline' : (h.paused ?? 0) >= h.sessions ? 'Paused' : 'Listening'
   return (
@@ -36,6 +39,9 @@ export function Today({ data, lastGood, name, guard, onSummary, onFix, onAddPlan
         <aside className="side">
           <SummaryCard summary={data.summary} guard={guard} onSummary={onSummary} />
           <PlanCard facts={data.facts} onAddPlan={onAddPlan} />
+          <CareAssistantCard facts={data.facts} name={name} guard={guard} refresh={refresh} />
+          <OpenQuestionsCard guard={guard} onAnswer={onAnswer} />
+          <PatternsCard guard={guard} />
         </aside>
       </div>
     </main>

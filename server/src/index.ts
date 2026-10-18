@@ -304,6 +304,18 @@ function scheduleTick() {
 }
 setInterval(scheduleTick, 60_000)
 
+// Open Questions by itself: every OPEN_QUESTIONS_EVERY_MIN minutes, only when real questions came in since the last
+// run, so a quiet day spends no credits. A run that is refused (one already running) or fails is logged, not retried.
+if (config.openQuestionsEveryMin > 0) {
+  let lastOpenQuestionsAt = new Date().toISOString()
+  setInterval(() => {
+    const { events } = store.between(lastOpenQuestionsAt, '~')
+    if (!events.some(e => !demo.isDemo(e.id))) return
+    lastOpenQuestionsAt = new Date().toISOString()
+    creao.runOpenQuestions(today()).then(id => console.log(`[creao] open questions run ${id}`), e => console.warn('[creao] open questions run failed', (e as Error).message))
+  }, config.openQuestionsEveryMin * 60_000)
+}
+
 // Idle check: close phones that sent nothing (no audio, no ping) for 45 s, so their speech streams close.
 const MAX_IDLE_MS = 45_000
 setInterval(() => { for (const s of sessions) s.closeIfIdle(MAX_IDLE_MS) }, 5_000)
