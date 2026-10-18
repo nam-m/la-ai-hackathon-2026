@@ -42,10 +42,10 @@ Seed data is embedded in each agent as reference data (pasted inline; file attac
 1. FIXED 07:35 PT: Pattern finder `tone_trend` is now one label (steady / more worried / less worried / not enough data), no raw counts. Sarah cluster comes out "more worried" at a gap of exactly 0.25 (3/12 to 6/12 worry flags), right at the threshold; treat as sensitive wording.
 2. FIXED 07:35 PT: Care assistant clinician preview now shows per-day Daily brief repeat-group counts before/after plus total, with a one-sentence note. Caveat: "repeat after 2 asks" changes nothing on the seed (all groups already have 3+ asks, 10 before and 10 after); "5 asks in 60 minutes" drops groups from 10 to 3. Use the second case in the demo.
 3. Daily brief tone trend for the Sarah group on 10-12 is "more worried" from one worry flag in the later half of 5 observations. Sensitive wording for a caregiver; consider requiring 6+ observations or a 0.4 gap before saying it.
-4. Not tested: whether a CREAO agent can call our server (POST /facts, /proposals) from its sandbox; CREAO dashboard form input; text/SMS connector. Only email scheduled-run delivery is documented.
+4. Server link, partly tested 07:40 PT: from a CREAO chat sandbox, outbound HTTPS to arbitrary public hosts works (POST JSON to httpbin.org 200 in 0.4s, api.github.com 200, example.com 200). So an agent can POST to our server's /facts or /proposals IF the server has a public HTTPS URL (a laptop localhost needs a tunnel such as ngrok or a deploy). Not yet tested from a registered agent's own run (only the chat sandbox), with a real token as a CREAO secret, or from a dashboard form. CREAO dashboard form input and text/SMS connector are also untested; only email scheduled-run delivery is documented.
 5. The agents return proposals only. Nothing writes facts anywhere; the confirm page and server enforcement of roles are not built yet.
 
 ## Next steps
 
-1. 10-minute test: can an agent call a public URL (webhook.site) from its sandbox? Decides whether the server link is live or demo-only.
+1. Decide how the server is reachable (tunnel or deploy), then have Care assistant POST a proposal to it from a registered agent run. If not reachable, demo the confirm flow from seeded data.
 2. Schedule Daily brief at 8 PM and email the caregiver (only after Nam approves).
