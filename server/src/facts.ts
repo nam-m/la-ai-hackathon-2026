@@ -26,6 +26,12 @@ export function saveFacts(facts: FactInput[]) {
       answeredBy: f.answeredBy ?? null, source: 'family', standing: Boolean(f.standing),
       remindAt: f.remindAt ?? null, expiresAt: f.expiresAt ?? null,
     }
+    // Re-saving a reminder at the same time (an undo, a Creao re-post) keeps its sent/missed status, so it isn't sent again.
+    const before = store.allRecords().find(r => r.id === f.id) ?? store.recentlyRemoved(f.id)
+    if (before?.reminderStatus && record.remindAt && before.remindAt === record.remindAt) {
+      record.reminderStatus = before.reminderStatus
+      record.reminderDoneAt = before.reminderDoneAt
+    }
     store.upsert(record)
     void matcher.warm(record)
   }
