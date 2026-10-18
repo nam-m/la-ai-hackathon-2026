@@ -194,6 +194,10 @@ async function claudePick(question: string, records: QARecord[]): Promise<Set<st
     // when they were stored together (live, 2026-10-18); the when/where example keeps that rule from weakening.
     'They are NOT the same if any of these differ: the event, person or thing asked about (dinner, lunch and a trip to the park are different events; ' +
     'my vs your; Mary vs Sarah); the kind of information (when vs where: "When is lunch?" and "Where is lunch?" are NOT the same; a time vs a name); or the day. ' +
+    // Live: "Where is Marie?" was stored and asked again as "Mary", "Mari" and "Murray"; none matched.
+    // Worded narrowly: "names that sound alike are the same" made Haiku take dinner for lunch too.
+    "Speech recognition may spell a person's name differently (Marie, Mary, Mari, Murray): treat spellings of the same name as one person. " +
+    'This is only about spelling names; events, things and my vs your must still be the same ("What is my name?" is NOT "What is your name?"). ' +
     'Reply with only their numbers separated by commas, or "none".\n' +
     `New question: ${oneLine(question)}\nEarlier questions:\n${list}`,
     30,
