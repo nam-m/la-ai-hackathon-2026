@@ -30,6 +30,10 @@ export function App() {
     setDraft(d => ({ n: (d?.n ?? 0) + 1, question: 'What’s the plan today?' }))
     go('facts')
   }, [go])
+  const answerQuestion = useCallback((question: string) => {
+    setDraft(d => ({ n: (d?.n ?? 0) + 1, question }))
+    go('facts')
+  }, [go])
   const saved = useCallback((who: string) => {
     if (!who) return
     prefs.set(NAME, who)
@@ -79,7 +83,8 @@ export function App() {
           )}
         </main>
       ) : tab === 'today' ? (
-        <Today data={data} lastGood={dash.lastGood} name={name} guard={dash.guard} onSummary={summary => dash.patch({ summary })} onFix={fix} onAddPlan={addPlan} />
+        <Today data={data} lastGood={dash.lastGood} name={name} guard={dash.guard} onSummary={summary => dash.patch({ summary })} onFix={fix} onAddPlan={addPlan}
+          refresh={dash.refresh} onAnswer={answerQuestion} />
       ) : tab === 'facts' ? (
         <Facts facts={data.facts} contradictions={data.log?.contradictions ?? []} draft={draft} name={name}
           guard={dash.guard} refresh={dash.refresh} onSaved={saved} />

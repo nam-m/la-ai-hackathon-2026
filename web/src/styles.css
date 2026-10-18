@@ -196,3 +196,11 @@ input:not([type=checkbox]):focus { outline: none; border: 2px solid var(--color-
   .callout, .fact, .setting { flex-direction: column; align-items: stretch; }
 }
 .load-error { max-width: 640px; align-items: flex-start; }
+
+/* Care assistant and agent cards */
+textarea { width: 100%; padding: 12px 14px; font: inherit; font-size: 16px; line-height: 24px; color: var(--color-ink); background: var(--color-card); border: 1.5px solid var(--color-line); border-radius: 12px; resize: vertical; }
+textarea::placeholder { color: #8E9993; }
+textarea:focus { outline: none; border: 2px solid var(--color-primary); box-shadow: 0 0 0 4px var(--color-primary-soft); }
+.care-form { display: flex; flex-direction: column; gap: 10px; }
+.role-btn[aria-pressed=true] { background: var(--color-primary-soft); color: var(--color-primary); border-color: var(--color-primary); }
+.proposal { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1.5px solid var(--color-line); }
