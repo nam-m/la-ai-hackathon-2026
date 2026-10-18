@@ -195,7 +195,7 @@ Reconnect the WebSocket with a short backoff if it drops.
 5. **Answer display (by 11 PM).** One text container showing `text, speaker, at`, or `text (told you at <at>)` when `speaker` is null. Test long answers on the real display and trim them. Clear after about 8 seconds or on a `clear` message.
 6. **Gestures (by Sun 2 AM).** Give the text container event capture. Click = dismiss. Double click = show the last answer again. Long press (arrives on `event.sysEvent`) = send pause or resume and show "Paused" or nothing.
 7. **Robustness (by Sun 8 AM).** Lock the phone for 5 minutes and unlock: recording must restart. Denied mic permission shows a clear message. Double-tap exit from the root page works.
-8. **Ship (by Sun 11 AM).** Declare `g2-microphone` and the server's domain in the manifest. Package the .ehpk, upload it, push to a Beta group with your phone's account, install it from Me, then Beta tester, and run the full demo on that build.
+8. **Ship.** Declare `g2-microphone` and the server's domain in the manifest. Package the .ehpk, upload it, push to a Beta group with your phone's account, install it from Me, then Beta tester, and run the full demo on that build.
 
 **Done when:** a repeated question on the real G2 shows its earlier answer, gestures work, and the installed Beta survives a phone lock.
 
@@ -286,16 +286,16 @@ You build everything in Creao: the family dashboard, the agents, and the plumbin
 
 ## Together at the end
 
-Feature freeze is **Sun 11 AM** (moved from 9:30 AM; the timed steps after the freeze were written for 9:30 and still need re-timing). From then until noon, all four of you do the product work. A also packages the Beta first.
+Feature freeze is **Sun 11 AM** (moved from 9:30 AM; the steps after it have no fixed times, we do them as we go). From then until noon, all four of you do the product work. A also packages the Beta first.
 
-1. **Bug bash (9:30–10 AM).** Everyone runs the full demo on the real G2; fix only what breaks the demo.
-2. **Pitch (10–10:15 AM, all).** A named user ("Rose, 78, early-stage Alzheimer's, lives with her daughter Sarah"), the problem in two sentences, a one-line pitch.
-3. **Demo setup (10:15–10:45 AM).** D enters the caregiver facts the script needs ("Mary is at the store, back by 3"). Assign Grandma, Sarah and the narrator.
+1. **Bug bash.** Everyone runs the full demo on the real G2; fix only what breaks the demo.
+2. **Pitch (all).** A named user ("Rose, 78, early-stage Alzheimer's, lives with her daughter Sarah"), the problem in two sentences, a one-line pitch.
+3. **Demo setup.** D enters the caregiver facts the script needs ("Mary is at the store, back by 3"). Assign Grandma, Sarah and the narrator.
 4. **Judge answers (all, learn them):**
    - Wrong answers? *It never writes answers; it only repeats what a person said, with who and when, and stays silent when unsure.*
    - Privacy and consent? *The family sets it up with the wearer; a long press pauses listening.*
    - Why glasses, not a phone? *No screen to find, nobody has to repeat themselves, and the answer is private.*
    - Where does the audio go? *To the transcription service and Creao's providers; real users would get consent and data controls.*
-5. **Devpost (by 11:30 AM).** B writes the story; C adds the architecture diagram and screenshots; A records a backup demo video; D selects the challenges: Even Realities, Creao, plus MLH ElevenLabs or Gemini if used.
+5. **Devpost.** B writes the story; C adds the architecture diagram and screenshots; A records a backup demo video; D selects the challenges: Even Realities, Creao, plus MLH ElevenLabs or Gemini if used.
 6. **Rehearse (by 11:45 AM).** Three full runs, glasses and phone charged.
 7. **After judging:** return the G2 to the Even table.

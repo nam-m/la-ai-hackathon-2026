@@ -91,7 +91,7 @@ A and B sit together for the loudness test; B and C agree on the speech module's
 
 ## Timeline
 
-Feature freeze is 11 AM Sunday (moved from 9:30 AM; the timed steps after the freeze were written for 9:30 and still need re-timing); submissions close at noon. Every phase ends with something that works end to end.
+Feature freeze is 11 AM Sunday (moved from 9:30 AM; the steps after it have no fixed times, we do them as we go); submissions close at noon. Every phase ends with something that works end to end.
 
 1. **Sat 4–8 PM: Hello, glasses.** Template running on the G2, loudness test done and transcription service chosen by 6 PM, live transcript reaching the server, our server answering a test call from the phone. The Even table closes at 8 PM, so solve hardware problems before then.
 2. **Sat 8 PM–2 AM: The core loop.** Q&A capture, repeat matching, the one-line answer on the glasses. Milestone: a repeated question shows its earlier answer.
@@ -141,7 +141,7 @@ Tick tasks off as you finish them. Times are deadlines, not start times. Sub-tas
   - [ ] Lock the phone for 5 minutes, unlock: listening restarts
   - [ ] Denied mic permission shows a clear message
   - [ ] Double-tap exit from the root page works
-- [ ] Ship the Beta, Sun 11 AM
+- [ ] Ship the Beta
   - [ ] Package the .ehpk and upload it; Beta group with the phone account
   - [ ] Install from Beta (Me, then Beta tester) and rerun the whole demo
 
@@ -206,11 +206,11 @@ Tick tasks off as you finish them. Times are deadlines, not start times. Sub-tas
 ### Together, Sun 11 AM to noon
 
 - [ ] A packages and uploads the Beta first, then joins
-- [ ] Bug bash: everyone runs the full demo on the real G2, 10 AM
-- [ ] Pitch with a named user, 10:15 AM
-- [ ] Demo setup: D enters the caregiver facts; assign Grandma, Sarah and narrator, 10:45 AM
+- [ ] Bug bash: everyone runs the full demo on the real G2
+- [ ] Pitch with a named user
+- [ ] Demo setup: D enters the caregiver facts; assign Grandma, Sarah and narrator
 - [ ] Everyone learns the four judge answers (build guide, Together at the end)
-- [ ] Devpost: B story, C diagram and screenshots, A backup video, D selects challenges, 11:30 AM
+- [ ] Devpost: B story, C diagram and screenshots, A backup video, D selects challenges
 - [ ] Rehearse the demo three times, 11:45 AM
 - [ ] Return the G2 after judging
 
