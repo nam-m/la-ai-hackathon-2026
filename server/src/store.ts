@@ -103,12 +103,38 @@ export function upsert(record: QARecord) {
   scheduleSave()
 }
 
+// Recently removed records, in memory only, so an undo (re-post of the same id) can keep a reminder's sent/missed status.
+const removed = new Map<string, QARecord>()
+export const recentlyRemoved = (id: string) => removed.get(id)
+
 export function remove(id: string) {
+  const gone = data.records.find(r => r.id === id)
+  if (gone) {
+    removed.set(id, gone)
+    if (removed.size > 50) removed.delete(removed.keys().next().value!)
+  }
   const before = data.records.length
   data.records = data.records.filter(r => r.id !== id)
   delete data.embeddings[id]
   scheduleSave()
   return data.records.length !== before
+}
+
+/** Removes every record, embedding, transcript line, question event and tone record whose id starts with `prefix`. */
+export function removeByPrefix(prefix: string) {
+  const keep = (x: { id: string }) => !x.id.startsWith(prefix)
+  data.records = data.records.filter(keep)
+  for (const id of Object.keys(data.embeddings)) if (id.startsWith(prefix)) delete data.embeddings[id]
+  data.transcript = data.transcript.filter(keep)
+  data.events = data.events.filter(keep)
+  data.tones = data.tones.filter(keep)
+  scheduleSave()
+}
+
+/** Removes every saved day summary that `match` picks. */
+export function removeSummaries(match: (s: DaySummary) => boolean) {
+  for (const d of Object.values(data.days)) if (d.summary && match(d.summary)) delete d.summary
+  scheduleSave()
 }
 
 /** The current version of a record, if it is still showable. Checked again right before delivery. */

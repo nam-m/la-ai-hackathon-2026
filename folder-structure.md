@@ -78,9 +78,10 @@ asked-answered/
 | `glasses-app/` | A: Glasses | Phone, through Even's tools |
 | `server/src/speech/` | B: Speech | Inside the server |
 | `server/` (everything else) and `tone-service/` | C: Server, matching, tone | Docker, or Render/Railway + laptop/Vultr |
-| `server/src/creao/` + the dashboard and agents inside Creao | D: Creao | Inside the server + Creao's cloud |
+| `server/src/creao/` + the agents inside Creao | D: Creao | Inside the server + Creao's cloud |
+| `web/` | Family app | Static host (Vercel/Netlify), or `npm run dev` |
 
 ## Not in the repo
 
-- The Creao app, dashboard and agents: built inside Creao.
+- The Creao agents: built inside Creao. The family dashboard is `web/`.
 - External APIs the server calls: ElevenLabs (transcription), Gemini (matching), Creao (agents).

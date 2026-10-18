@@ -6,11 +6,15 @@ import * as store from './store.js'
 import * as matcher from './matcher.js'
 import * as creao from './creao/index.js'
 import * as emotion from './emotion/index.js'
+import * as demo from './demo.js'
 import { factProblem, saveFacts } from './facts.js'
 import { Session, sessions, answerMessage, formatTime } from './session.js'
 import type { FactInput, QuestionEvent, RunKind } from './types.js'
 
 store.loadStore()
+// DEMO_DATA off: sweep any demo day left on the volume from an earlier demo run.
+if (config.demoData) demo.seedDemo()
+else demo.clearDemo()
 
 const app = express()
 app.use(express.json({ limit: '1mb' }))
@@ -39,7 +43,7 @@ const today = () => store.localDate(new Date().toISOString())
 
 app.get('/health', (_req, res) => {
   res.json({
-    ok: true, sessions: sessions.size, records: store.allRecords().length,
+    ok: true, sessions: sessions.size, paused: [...sessions].filter(s => s.isPaused).length, records: store.allRecords().length,
     matcher: matcherName, verify: verifierName, speech: config.speechProvider,
     tone: emotion.toneStatus(),
   })
@@ -57,14 +61,20 @@ app.post('/facts', requireSecret, (req, res) => {
   res.json({ stored: body.facts.length })
 })
 
+// Dashboard: family facts the glasses can still use. store.get() hides expired ones the 10-minute prune hasn't removed yet.
+app.get('/facts', requireSecret, (_req, res) => {
+  res.json({ v: 1, facts: store.allRecords().filter(r => r.source === 'family' && store.get(r.id)) })
+})
+
 app.delete('/facts/:id', requireSecret, (req, res) => {
   res.json({ removed: store.remove(req.params.id) })
 })
 
 /**
- * Groups asks of the same question. An ask links to the record the glasses showed (matchedRecordId) and to the
- * record its spoken answer became (answerRecordId); asks sharing any record are one question, even after it is
- * answered aloud again and later asks match the newer answer. Unlinked asks group by their own text.
+ * Groups asks of the same question. An ask links to the record the glasses showed (matchedRecordId), to the
+ * record its spoken answer became (answerRecordId) and, when nothing was shown because two answers disagreed, to
+ * both of those (contradiction); asks sharing any record are one question, even after it is answered aloud again
+ * and later asks match the newer answer. Unlinked asks group by their own text.
  */
 function groupAsks(events: QuestionEvent[]) {
   const parent = new Map<string, string>()
@@ -74,7 +84,11 @@ function groupAsks(events: QuestionEvent[]) {
   for (const e of events) {
     if (e.matchedRecordId) union(keyOf(e), `r:${e.matchedRecordId}`)
     if (e.answerRecordId) union(keyOf(e), `r:${e.answerRecordId}`)
-    if (!e.matchedRecordId && !e.answerRecordId) union(keyOf(e), `t:${e.question.toLowerCase().replace(/[^a-z ]/g, '').trim()}`)
+    if (e.contradiction) {
+      union(keyOf(e), `r:${e.contradiction.spokenRecordId}`)
+      union(keyOf(e), `r:${e.contradiction.factRecordId}`)
+    }
+    if (!e.matchedRecordId && !e.answerRecordId && !e.contradiction) union(keyOf(e), `t:${e.question.toLowerCase().replace(/[^a-z ]/g, '').trim()}`)
   }
   const groups = new Map<string, QuestionEvent[]>()
   for (const e of events) {
@@ -89,11 +103,21 @@ app.get('/log/today', requireSecret, (_req, res) => {
   const events = store.todaysEvents()
   const tones = new Map(store.todaysTones().map(t => [t.id, t]))
   const worryOf = (e: QuestionEvent) => { const t = e.toneId ? tones.get(e.toneId) : undefined; return t?.quality === 'ok' ? t.worry : null }
+  const byId = new Map(store.allRecords().map(r => [r.id, r]))
+  // Per ask: was something shown, and whose answer (the shown record, else the spoken answer this ask got,
+  // else, when nothing was shown because answers disagreed, the spoken answer in the disagreement).
+  const askOf = (e: QuestionEvent) => {
+    const record = (id?: string | null) => (id ? byId.get(id) : undefined)
+    const answer = record(e.matchedRecordId) ?? record(e.answerRecordId) ?? record(e.contradiction?.spokenRecordId)
+    return {
+      at: e.at, worry: worryOf(e), shown: Boolean(e.matchedRecordId), contradiction: Boolean(e.contradiction),
+      answeredBy: answer?.answeredBy ?? null, source: answer?.source ?? null,
+    }
+  }
   const repeated = groupAsks(events)
     .filter(g => g.length > 1)
-    .map(g => ({ question: g[0].question, count: g.length, times: g.map(e => e.at), worry: g.map(worryOf) }))
+    .map(g => ({ question: g[0].question, count: g.length, times: g.map(e => e.at), worry: g.map(worryOf), asks: g.map(askOf) }))
     .sort((a, b) => b.count - a.count)
-  const byId = new Map(store.allRecords().map(r => [r.id, r]))
   res.json({
     v: 1,
     transcript: store.todaysTranscript(),
@@ -131,6 +155,11 @@ app.post('/creao/webhook', (req, res) => {
   creao.handleWebhook(req.body).catch(e => console.warn('[creao] webhook failed', e.message))
 })
 
+// Dashboard: today's Creao summary as the webhook saved it, or null until one arrives.
+app.get('/summary/today', requireSecret, (_req, res) => {
+  res.json({ v: 1, summary: store.getDay(today())?.summary ?? null })
+})
+
 // Demo helper: trigger the end-of-day summary by hand.
 app.post('/creao/summary', requireSecret, async (_req, res) => {
   try {
@@ -141,6 +170,14 @@ app.post('/creao/summary', requireSecret, async (_req, res) => {
     res.status(502).json({ error: (e as Error).message })
   }
 })
+
+// Demo helper: replace the demo day with a fresh one, e.g. right before presenting. Only with DEMO_DATA=1.
+if (config.demoData) {
+  app.post('/demo/reset', requireSecret, (_req, res) => {
+    demo.seedDemo()
+    res.json({ ok: true })
+  })
+}
 
 // Debug helper: test the matcher without the glasses. POST {"question":"..."}. Off in production.
 if (config.debugRoutes) {
@@ -195,7 +232,10 @@ setInterval(() => {
   const fromIso = lastLogAt
   const toIso = new Date(Date.now() - LOG_LAG_MS).toISOString()
   lastLogAt = toIso
-  const batch = store.between(fromIso, toIso)
+  // The demo day stays out of Creao's history.
+  const real = <T extends { id: string }>(xs: T[]) => xs.filter(x => !demo.isDemo(x.id))
+  const { transcript, events, tones, pairs } = store.between(fromIso, toIso)
+  const batch = { transcript: real(transcript), events: real(events), tones: real(tones), pairs: real(pairs) }
   if (!batch.transcript.length && !batch.events.length) return
   creao.submitLog({ fromIso, toIso, ...batch }).catch(e => console.warn('[creao] submitLog failed', e.message))
 }, 5 * 60_000)
@@ -227,8 +267,11 @@ setInterval(scheduleTick, 60_000)
 const MAX_IDLE_MS = 45_000
 setInterval(() => { for (const s of sessions) s.closeIfIdle(MAX_IDLE_MS) }, 5_000)
 
-// Expire yesterday's records.
-setInterval(() => store.pruneExpired(), 10 * 60_000)
+// Expire yesterday's records; with DEMO_DATA, start a new demo day once the date turns over.
+setInterval(() => {
+  store.pruneExpired()
+  if (config.demoData) demo.refreshIfStale()
+}, 10 * 60_000)
 
 // Health-check the tone service every 30 s while tone is on: /health must show an outage and a recovery
 // (and the first start's model download) without waiting for the next question.
