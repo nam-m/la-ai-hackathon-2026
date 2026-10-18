@@ -28,6 +28,11 @@ const ASKS: Ask[] = [
   { id: 'mary1', ago: 250, question: 'Where is Mary?', worry: 0.1, link: { matchedRecordId: 'demo_fact_mary', matchScore: 0.98 } },
   { id: 'mary2', ago: 160, question: 'Where’s Mary gone?', worry: 0.15, link: { matchedRecordId: 'demo_fact_mary', matchScore: 0.9 } },
   { id: 'mary3', ago: 90, question: 'Where is Mary?', worry: null, link: { matchedRecordId: 'demo_fact_mary', matchScore: 0.98 } },
+  // Doctor: the "fix this fact" example, on a question outside the live script. Tom said Tuesday aloud; Sarah's note
+  // later says Wednesday, so the last ask shows nothing (Today's callout and the flagged card in Facts).
+  { id: 'doctor1', ago: 235, question: 'When is the doctor’s appointment?', worry: 0.15, link: { answerRecordId: 'demo_qa_doctor' }, reply: { name: 'Tom', text: 'The doctor is on Tuesday at 10.' } },
+  { id: 'doctor2', ago: 180, question: 'When do I see the doctor?', worry: 0.25, link: { matchedRecordId: 'demo_qa_doctor', matchScore: 0.92 } },
+  { id: 'doctor3', ago: 45, question: 'Is the doctor today?', worry: 0.45, link: { contradiction: { spokenRecordId: 'demo_qa_doctor', factRecordId: 'demo_fact_doctor' } } },
   // Asked once. (Leo's weekly visit is left out: Sarah adds it in the web app on camera.)
   { id: 'rain1', ago: 70, question: 'Is it going to rain?', worry: 0.22 },
 ]
@@ -60,8 +65,10 @@ export function seedDemo(now = new Date()) {
     record({ id: 'demo_fact_home', question: 'Where do I live?', answer: 'You live at 12 Oak Street with your daughter Sarah.', standing: true }, 300),
     record({ id: 'demo_fact_sarah', question: 'Who is Sarah?', answer: 'Sarah is your daughter.', standing: true }, 300),
     record({ id: 'demo_fact_lunch', question: 'What time is lunch?', answer: 'Lunch is at noon.' }, 60),
+    record({ id: 'demo_fact_doctor', question: 'When is the doctor’s appointment?', answer: 'The doctor is on Wednesday at 10.' }, 150),
     record({ id: 'demo_reminder_pills', answer: 'Time to take your pills.', remindAt: at(120), reminderStatus: 'sent', reminderDoneAt: at(120) }, 300),
     record({ id: 'demo_qa_lunch', question: 'What time is lunch?', answer: 'Lunch is at noon.', answeredBy: 'Tom', source: 'spoken' }, 280),
+    record({ id: 'demo_qa_doctor', question: 'When is the doctor’s appointment?', answer: 'The doctor is on Tuesday at 10.', answeredBy: 'Tom', source: 'spoken' }, 235),
   ]
   for (const r of records) {
     store.upsert(r)
@@ -91,7 +98,9 @@ export function seedDemo(now = new Date()) {
       date, demo: true, generatedAt: at(15),
       summary: 'A mostly calm morning for Rose. She asked about lunch four times and sounded more worried each time: Tom ' +
         'answered noon and the glasses repeated it each time. Mary was asked about three ' +
-        'times and the glasses answered from the family note each time. The pills reminder was delivered.',
+        'times and the glasses answered from the family note each time. The doctor’s appointment came up three times: Tom ' +
+        'said Tuesday but Sarah’s note says Wednesday, so the glasses stayed quiet the last time. Worth checking the note. ' +
+        'The pills reminder was delivered.',
     })
   }
   console.log(`[demo] seeded ${records.length} records, ${ASKS.length} questions for ${date}`)
