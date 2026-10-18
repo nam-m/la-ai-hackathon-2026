@@ -1,6 +1,15 @@
 import 'dotenv/config'
 
-const env = (name: string, fallback = '') => process.env[name] ?? fallback
+// An empty value counts as unset, so `MATCH_THRESHOLD=` in .env doesn't silently become 0.
+const env = (name: string, fallback = '') => process.env[name] || fallback
+
+/** HH:MM, zero-padded so times compare correctly ("8:00" -> "08:00"); warns and uses the fallback if invalid. */
+function hhmm(name: string, fallback: string) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(env(name, fallback).trim())
+  if (m && Number(m[1]) < 24 && Number(m[2]) < 60) return `${m[1].padStart(2, '0')}:${m[2]}`
+  console.warn(`[config] ${name}=${process.env[name]} is not HH:MM; using ${fallback}`)
+  return fallback
+}
 
 export const config = {
   port: Number(env('PORT', '8080')),
@@ -19,8 +28,8 @@ export const config = {
   toneUrl: env('TONE_URL'), // empty = tone analysis off
   toneSecret: env('TONE_SECRET', 'change-me-tone'),
   // Server-driven Creao runs, wearer's local time, HH:MM.
-  summaryAt: env('SUMMARY_AT', '20:00'),
-  patternsAt: env('PATTERNS_AT', '23:30'),
+  summaryAt: hhmm('SUMMARY_AT', '20:00'),
+  patternsAt: hhmm('PATTERNS_AT', '23:30'),
   // /debug/* routes; off when NODE_ENV=production (the Dockerfile sets it).
   debugRoutes: env('NODE_ENV') !== 'production',
 }

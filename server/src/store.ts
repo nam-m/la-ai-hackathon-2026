@@ -167,7 +167,12 @@ const day = (date: string) => (data.days[date] ??= { log: [] })
 
 export function appendLogEntry(date: string, entry: LogEntry) { day(date).log.push(entry); scheduleSave() }
 export function saveSummary(date: string, summary: DaySummary) { day(date).summary = summary; scheduleSave() }
-export function savePatterns(report: PatternsReport) { day(today()).patterns = report; scheduleSave() }
+/** Filed under the local date the report covers (its toIso), not the day the webhook arrives (spec 8). */
+export function savePatterns(report: PatternsReport) {
+  const covered = typeof report.toIso === 'string' && !Number.isNaN(Date.parse(report.toIso)) ? localDate(report.toIso) : today()
+  day(covered).patterns = report
+  scheduleSave()
+}
 export const getDay = (date: string) => data.days[date]
 
 /** D's RunKindRegistry: run ID -> kind, persisted so callbacks after a restart still route. */

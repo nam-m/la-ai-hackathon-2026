@@ -64,7 +64,7 @@ export type ServerMessage =
 export type RunKind = 'log' | 'summary' | 'facts' | 'patterns'
 export type LogEntry = { at: string; speaker: string | null; name: string | null; text: string; isWearer: boolean }
 export type DaySummary = { date: string } & Record<string, unknown>
-export type PatternsReport = Record<string, unknown>
+export type PatternsReport = { toIso?: string } & Record<string, unknown> // D's report: fromIso, toIso, flags, generatedAt
 
 /** Contract 4: POST /facts body. */
 export type FactInput = {

@@ -41,4 +41,4 @@ The first build takes a while (PyTorch), and the first start downloads the emoti
 
 The glasses app (A) still runs through Even's own tools, not Docker. For Render or Railway, deploy `server/` from its Dockerfile or as a plain Node app; the tone service needs more memory than free tiers give, so run it on a laptop with a tunnel or on a Vultr instance and set `TONE_URL`.
 
-Spec: `MVP_IMPLEMENTATION_SPEC.md` (v4.1).
+Spec: `MVP_IMPLEMENTATION_SPEC.md` (v4.2).

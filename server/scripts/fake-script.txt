@@ -1,6 +1,7 @@
 # Fake conversation for SPEECH_PROVIDER=fake.
-# Format: <seconds after previous line> | <wearer|Name> | <text>
-# A wearer line ending in "?" is a question; the next non-wearer line is its answer.
+# Format: <seconds after previous line> | <wearer|Name|unknown> | <text>
+# A wearer line ending in "?" is a question. Every named (role "other") line within 30 s is a candidate answer;
+# the server saves the first that replies to it. "unknown" lines are never answers. A new question closes the window.
 2 | wearer | What time is lunch?
 2 | Sarah | Lunch is at noon.
 3 | Sarah | I'm going to water the plants.

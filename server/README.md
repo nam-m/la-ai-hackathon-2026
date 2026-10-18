@@ -25,7 +25,7 @@ With `SPEECH_PROVIDER=fake`, the server replays `scripts/fake-script.txt` as if 
 | --- | --- | --- |
 | `src/index.ts` | C | HTTP routes, `/ws` upgrade with token check, heartbeat, reminders, Creao log every 5 min, scheduled summary/patterns, midnight expiry |
 | `src/facts.ts` | C | Fact validation and saving (shared by `/facts` and Creao runs); `creaoStore` for D's router |
-| `src/session.ts` | C | One phone connection: messages, pause/resume, saving pairs, matching, 5-minute audio clips to Creao |
+| `src/session.ts` | C | One phone connection: messages, pause/resume, 60-second audio buffer for tone, matching, saving pairs, idle close |
 | `src/matcher.ts` | C | Embeddings + cosine + yes/no double-check; any failure returns nothing |
 | `src/store.ts` | C | Q&A records and cached embeddings, saved to a JSON file |
 | `src/types.ts` | all | Contract shapes |

@@ -11,7 +11,9 @@ export function factProblem(f: FactInput | undefined): string | null {
   if (f.question != null && typeof f.question !== 'string') return 'question must be a string or null'
   if (f.remindAt != null && !isDate(f.remindAt)) return 'bad remindAt'
   if (f.expiresAt != null && !isDate(f.expiresAt)) return 'bad expiresAt'
-  if (!(typeof f.question === 'string' && f.question.trim()) && f.remindAt == null) return 'needs a question or remindAt'
+  const hasQuestion = typeof f.question === 'string' && f.question.trim() !== ''
+  if (!hasQuestion && f.remindAt == null) return 'needs a question or remindAt'
+  if (hasQuestion && f.remindAt != null) return 'a fact is either a question/answer or a reminder, not both'
   return null
 }
 

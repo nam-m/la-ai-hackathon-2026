@@ -225,7 +225,7 @@ You build the server's speech module: it turns the audio stream into sentences, 
 5. **Wearer vs. others (by 11 PM).**
    - ElevenLabs: `role` = `wearer` when RMS is above the threshold from your test, `other` when clearly below, `unknown` in between or when voices overlap.
    - Deepgram: at setup the wearer says one sentence; that speaker label is the wearer. Loudness breaks ties. Family members each say a sentence too, so their labels map to names.
-6. **Q&A capture (by Sun 1 AM).** A wearer sentence ending in "?" or starting with a question word is a question. Hand it to C's matcher right away. The next sentence from someone else within 30 seconds is its answer; emit it with `onPair`. C's server double-checks it really replies to the question before saving it.
+6. **Q&A capture (by Sun 1 AM).** A wearer sentence ending in "?" or starting with a question word is a question. Hand it to C's matcher right away. Every `other` sentence within 30 seconds is a candidate answer: emit each with `onPair`, in the order spoken. C's server saves the earliest one that really replies to the question. A new wearer question closes the previous window.
 7. **Skip silence (by Sun 3 AM).** Don't forward chunks below a quiet threshold. It saves cost and cuts noise.
 8. **Measure (by Sun 6 AM).** Time from the end of the question to the line on the glasses. Target 2 seconds or less. The biggest share is the service waiting to be sure the sentence ended; shorten that setting if it's slow.
 9. **Noise test (by Sun 8 AM).** Three people talking, one wearer asking. Fix whatever breaks.

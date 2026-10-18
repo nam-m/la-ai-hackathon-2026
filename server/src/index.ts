@@ -200,9 +200,12 @@ setInterval(() => {
   creao.submitLog({ fromIso, toIso, ...batch }).catch(e => console.warn('[creao] submitLog failed', e.message))
 }, 5 * 60_000)
 
-// Server-driven Creao runs (spec 8): daily summary and nightly patterns, once per local day.
-// The last run date is persisted, so a restart after the time doesn't run them twice. A failed run isn't retried
-// automatically (each run costs credits); use POST /creao/summary.
+// Server-driven Creao runs (spec 8): daily summary and nightly patterns, once per local day, only within
+// 15 minutes after their time. A server (re)started later that evening doesn't fire them, so a fresh store or a
+// redeploy never spends credits on a surprise run; the last run date is persisted too. Missed or failed runs aren't
+// retried automatically (each run costs credits); use POST /creao/summary.
+const RUN_WINDOW_MIN = 15
+const minutesOf = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5))
 const localHHMM = () =>
   new Intl.DateTimeFormat('en-GB', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date())
 const scheduled: [RunKind, string, (date: string) => Promise<string>][] = [
@@ -212,7 +215,8 @@ const scheduled: [RunKind, string, (date: string) => Promise<string>][] = [
 function scheduleTick() {
   const date = today()
   for (const [kind, at, run] of scheduled) {
-    if (localHHMM() < at || store.lastRun(kind) === date) continue
+    const sinceAt = minutesOf(localHHMM()) - minutesOf(at)
+    if (sinceAt < 0 || sinceAt >= RUN_WINDOW_MIN || store.lastRun(kind) === date) continue
     store.setLastRun(kind, date)
     run(date).then(id => console.log(`[creao] ${kind} run ${id}`), e => console.warn(`[creao] ${kind} run failed`, e.message))
   }
