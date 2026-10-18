@@ -43,18 +43,21 @@ test('every demo timestamp is on the seed day and not in the future', () => {
   }
 });
 
-test('lunch and Mary asks link to shared records; the lunch note agrees, so nothing is a contradiction', () => {
+test('lunch and Mary asks link to shared records; only the last Mary ask is a contradiction', () => {
   seedDemo(new Date('2026-10-18T19:00:00Z'));
   const links = (e: ReturnType<typeof demoEvents>[number]) =>
-    [e.matchedRecordId, e.answerRecordId, e.contradiction?.spokenRecordId].filter(Boolean);
+    [e.matchedRecordId, e.answerRecordId, e.contradiction?.spokenRecordId, e.contradiction?.factRecordId].filter(Boolean);
   const lunch = demoEvents().filter(e => e.id.startsWith('demo_qe_lunch'));
   assert.equal(lunch.length, 4);
   for (const e of lunch) assert.ok(links(e).includes('demo_qa_lunch'));
-  assert.equal(demoEvents().filter(e => e.contradiction).length, 0);
+  assert.equal(lunch.filter(e => e.contradiction).length, 0);
   assert.equal(store.allRecords().find(r => r.id === 'demo_fact_lunch')?.answer, 'Lunch is at noon.');
   const mary = demoEvents().filter(e => e.id.startsWith('demo_qe_mary'));
-  assert.equal(mary.length, 3);
-  for (const e of mary) assert.equal(e.matchedRecordId, 'demo_fact_mary');
+  assert.equal(mary.length, 4);
+  for (const e of mary) assert.ok(links(e).includes('demo_fact_mary'));
+  assert.deepEqual(demoEvents().filter(e => e.contradiction).map(e => [e.id, e.contradiction]),
+    [['demo_qe_mary4', { spokenRecordId: 'demo_qa_mary', factRecordId: 'demo_fact_mary' }]]);
+  assert.match(store.allRecords().find(r => r.id === 'demo_qa_mary')?.answer ?? '', /pharmacy/);
   for (const e of demoEvents()) assert.ok(e.toneId, `${e.id} has no tone`);
 });
 
