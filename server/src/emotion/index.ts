@@ -52,22 +52,30 @@ export function toneStatus() {
 }
 
 /**
- * Ping the tone service so problems show up before the demo, not during it. Called at startup and every
- * 30 s until the model is loaded (the first start downloads it); /health reports "on" only after that.
+ * Health-check the tone service. The server calls this at startup and every 30 s while tone is on, so /health
+ * notices an outage (degraded, then unreachable after 3 failed checks) and a recovery within about 30 s, with
+ * or without questions coming in. A failed check counts like a failed tone call; logs only on state changes.
  */
 export async function probe(): Promise<boolean> {
   if (!config.toneUrl) return true
+  const wasHealthy = reached && consecutiveFailures === 0
   try {
     const res = await fetch(`${config.toneUrl.replace(/\/$/, '')}/health`, { signal: AbortSignal.timeout(3000) })
     const json = (await res.json()) as { model?: string; mock?: boolean; loaded?: boolean }
-    if (json.mock) console.warn('[tone] WARNING: tone service is in MOCK mode. Scores are fake; never demo this.')
-    console.log(`[tone] reachable: model=${json.model} loaded=${json.loaded}`)
-    if (!json.loaded) { lastError = 'model still loading'; return false }
+    if (!json.loaded) {
+      if (lastError !== 'model still loading') console.log(`[tone] reachable: model=${json.model}, still loading`)
+      lastError = 'model still loading'
+      return false
+    }
+    if (!wasHealthy) {
+      if (json.mock) console.warn('[tone] WARNING: tone service is in MOCK mode. Scores are fake; never demo this.')
+      console.log(`[tone] reachable: model=${json.model} loaded`)
+    }
     recordSuccess()
     return true
   } catch (e) {
-    lastError = (e as Error).message
-    console.warn(`[tone] not reachable at ${config.toneUrl}: ${lastError}. Answers are unaffected.`)
+    if (consecutiveFailures === 0) console.warn(`[tone] not reachable at ${config.toneUrl}: ${(e as Error).message}. Answers are unaffected.`)
+    recordFailure((e as Error).message)
     return false
   }
 }
