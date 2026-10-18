@@ -6,6 +6,9 @@ import * as emotion from './emotion/index.js'
 import { createSpeechModule, type QAPair, type SpeechModule, type SpeechOptions, type Utterance } from './speech/index.js'
 import { PcmRing } from './wav.js'
 import { RoleTimeline, isGlassesRole } from './glasses-role.js'
+import * as voiceClient from './voices/client.js'
+import { extractName } from './voices/names.js'
+import { VoiceTracker } from './voices/tracker.js'
 import type { PhoneMessage, QARecord, ServerMessage } from './types.js'
 
 export const sessions = new Set<Session>()
@@ -17,11 +20,17 @@ export type SessionDependencies = {
   isReply: typeof matcher.isReply
   warm: typeof matcher.warm
   analyzeQuestion: typeof emotion.analyzeQuestion
+  /** Voice recognition (voices/); off unless VOICE_URL is set or a test passes these. */
+  embedVoice?: typeof voiceClient.embed
+  extractName?: typeof extractName
 }
 const defaultDependencies: SessionDependencies = {
   createSpeech: createSpeechModule, findMatch: matcher.findMatch, isReply: matcher.isReply,
   warm: matcher.warm, analyzeQuestion: emotion.analyzeQuestion,
 }
+
+/** How long a spoken pair waits for the answerer's voice check, so the glasses can say "Kevin · 10:40 AM". */
+const ANSWERER_WAIT_MS = 1500
 
 export function formatTime(iso: string) {
   return new Intl.DateTimeFormat('en-US', { timeZone: config.timezone, hour: 'numeric', minute: '2-digit' }).format(new Date(iso))
@@ -49,9 +58,20 @@ export class Session {
   private generation = 0
   private closed = false
   private speechUnavailable = false
+  /** Who is talking to the wearer, by voice; null when voice recognition is off. */
+  private voices: VoiceTracker | null = null
 
   constructor(private ws: WebSocket, private readonly dependencies: SessionDependencies = defaultDependencies) {
     sessions.add(this)
+    if (dependencies.embedVoice || voiceClient.voiceEnabled()) {
+      this.voices = new VoiceTracker({
+        session: () => this.name,
+        embed: dependencies.embedVoice ?? voiceClient.embed,
+        extractName: dependencies.extractName ?? extractName,
+        clip: (startMs, endMs) => this.ring.get(startMs, endMs),
+        send: msg => { if (!this.closed && !this.paused) this.send(msg) },
+      })
+    }
     ws.on('message', (data, isBinary) => {
       this.lastHeard = Date.now()
       return isBinary ? this.onAudio(data as Buffer) : this.onJson(data.toString())
@@ -172,7 +192,9 @@ export class Session {
   private onUtterance(u: Utterance) {
     if (this.closed || this.paused) return
     console.log(`[speech ${this.name}] ${u.role === 'wearer' ? 'WEARER' : u.role === 'unknown' ? '?' : (u.name ?? u.speaker ?? 'other')}: ${u.text}`)
-    store.addTranscript({ id: u.id + '_' + Date.now().toString(36), at: new Date().toISOString(), role: u.role, name: u.role === 'other' ? u.name : null, text: u.text })
+    const id = u.id + '_' + Date.now().toString(36)
+    store.addTranscript({ id, at: new Date().toISOString(), role: u.role, name: u.role === 'other' ? u.name : null, text: u.text })
+    this.voices?.onUtterance(u, id)
   }
 
   private async onQuestion(q: Utterance) {
@@ -232,21 +254,30 @@ export class Session {
       console.log(`[store ${this.name}] not a reply, window stays open: "${p.question.text}" -> "${p.answer.text}"`)
       return false
     }
+    // Speech gives no names with ElevenLabs; the answerer's remembered voice may.
+    const voice = p.answer.name ? null : await this.voices?.voiceFor(p.answer.id, ANSWERER_WAIT_MS)
+    const answeredBy = p.answer.name ?? voice?.name ?? null
+    if (!this.isCurrent(p.question.id, generation)) return false
     const record: QARecord = {
       id: store.newId('qa'),
       question: p.question.text,
       answer: p.answer.text,
       askedAt: new Date(answeredAt - (p.answer.endMs - p.question.endMs)).toISOString(),
       answeredAt: new Date(answeredAt).toISOString(),
-      answeredBy: p.answer.name,
+      answeredBy,
       source: 'spoken',
       standing: false,
     }
     store.upsert(record)
+    // Their name may come later ("Thanks, Sarah"); then this answer says who gave it too.
+    if (!answeredBy) this.voices?.whenNamed(p.answer.id, name => {
+      const saved = store.get(record.id)
+      if (saved && !saved.answeredBy) store.upsert({ ...saved, answeredBy: name })
+    })
     void this.dependencies.warm(record).catch(() => undefined)
     // Link the ask that produced this answer, so it counts with its later repeats.
     if (this.latestQuestionEventId) store.updateEvent(this.latestQuestionEventId, { answerRecordId: record.id })
-    console.log(`[store] pair ${record.id}: "${record.question}" -> "${record.answer}"`)
+    console.log(`[store] pair ${record.id}: "${record.question}" -> "${record.answer}"${answeredBy ? ` (${answeredBy})` : ''}`)
     return true
   }
 
@@ -254,6 +285,7 @@ export class Session {
     if (!sessions.delete(this)) return
     this.closed = true
     this.invalidateWindow()
+    this.voices?.close()
     console.log(`[ws ${this.name}] closed`)
     void this.speech?.close().catch(() => undefined)
   }

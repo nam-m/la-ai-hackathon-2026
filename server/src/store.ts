@@ -1,13 +1,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { config } from './config.js'
-import type { DaySummary, LogEntry, PatternsReport, QARecord, QuestionEvent, RunKind, ToneRecord, TranscriptLine } from './types.js'
+import type { DaySummary, LogEntry, PatternsReport, QARecord, QuestionEvent, RunKind, ToneRecord, TranscriptLine, VoiceRecord } from './types.js'
 
 /**
  * Q&A store: in memory, saved to a JSON file so it survives restarts.
  * Embeddings are cached here too so we only embed each question once.
  * Also keeps today's transcript, question events and tone records for the dashboard and Creao,
- * what Creao sends back (per-day log, summary, patterns) and the run ID -> kind registry.
+ * what Creao sends back (per-day log, summary, patterns), the run ID -> kind registry and the named voices.
  */
 type Day = { log: LogEntry[]; summary?: DaySummary; patterns?: PatternsReport }
 type StoreFile = {
@@ -20,11 +20,12 @@ type StoreFile = {
   days: Record<string, Day>
   runs: Record<string, RunKind>
   lastRun: Partial<Record<RunKind, string>> // local date of the last scheduled run per kind
+  voices: VoiceRecord[] // named voices only; kept until deleted on the voice dashboard
 }
 
 const KEEP_DAYS = 7
 const empty = (): StoreFile => ({
-  records: [], embeddings: {}, transcript: [], events: [], tones: [], settings: { toneAnalysis: true }, days: {}, runs: {}, lastRun: {},
+  records: [], embeddings: {}, transcript: [], events: [], tones: [], settings: { toneAnalysis: true }, days: {}, runs: {}, lastRun: {}, voices: [],
 })
 let data: StoreFile = empty()
 let saveTimer: NodeJS.Timeout | null = null
@@ -124,6 +125,10 @@ export const answerable = () => data.records.filter(r => r.question && isLive(r)
 const isToday = (iso: string) => localDate(iso) === today()
 
 export function addTranscript(line: TranscriptLine) { data.transcript.push(line); scheduleSave() }
+export function updateTranscript(id: string, patch: Partial<TranscriptLine>) {
+  const l = data.transcript.find(x => x.id === id)
+  if (l) { Object.assign(l, patch); scheduleSave() }
+}
 export function addEvent(e: QuestionEvent) { data.events.push(e); scheduleSave() }
 export function updateEvent(id: string, patch: Partial<QuestionEvent>) {
   const e = data.events.find(x => x.id === id)
@@ -190,6 +195,16 @@ export const runRegistry = {
   peek: (runId: string) => data.runs[runId],
   has: (runId: string) => runId in data.runs,
 }
+
+// ---- named voices ----
+export const listVoices = () => data.voices
+export function saveVoice(v: VoiceRecord) {
+  const i = data.voices.findIndex(x => x.id === v.id)
+  if (i >= 0) data.voices[i] = v
+  else data.voices.push(v)
+  scheduleSave()
+}
+export function deleteVoice(id: string) { data.voices = data.voices.filter(v => v.id !== id); scheduleSave() }
 
 export const lastRun = (kind: RunKind) => data.lastRun[kind]
 export function setLastRun(kind: RunKind, date: string) { data.lastRun[kind] = date; scheduleSave() }

@@ -14,6 +14,9 @@ export const ANSWER_MAX_CHARS = 100
 // Shown instead of an answer longer than that; the phone has it in full.
 export const SEE_PHONE_TEXT = 'See phone'
 const ANSWER_SHOW_MS = 8_000
+// The name of a remembered person who is talking; the server repeats it every
+// few seconds while they keep talking.
+const SPEAKER_SHOW_MS = 6_000
 // Short drops (server restart, Wi-Fi blip) reconnect within a second or two;
 // only flag an outage that lasts.
 const OFFLINE_AFTER_MS = 3_000
@@ -69,12 +72,15 @@ function layout() {
 }
 
 /**
- * The glasses display. Stays blank unless there is an answer to show, the
- * wearer paused, the mic is blocked, or the server has been gone for a while.
+ * The glasses display. Stays blank unless there is an answer to show, a
+ * remembered person is talking, the wearer paused, the mic is blocked, or the
+ * server has been gone for a while.
  */
 export class Glasses {
   private answer: Answer | null = null
   private answerVisible = false
+  private speaker: string | null = null
+  private speakerTimer: ReturnType<typeof setTimeout> | undefined
   private paused = false
   private micDenied = false
   private offline = false
@@ -131,6 +137,17 @@ export class Glasses {
     this.render()
   }
 
+  /** Who is talking, in the dim line, for a few seconds. An answer takes the line over. */
+  showSpeaker(name: string) {
+    clearTimeout(this.speakerTimer)
+    this.speaker = name
+    this.render()
+    this.speakerTimer = setTimeout(() => {
+      this.speaker = null
+      this.render()
+    }, SPEAKER_SHOW_MS)
+  }
+
   setPaused(paused: boolean) {
     this.paused = paused
     this.render()
@@ -173,6 +190,7 @@ export class Glasses {
     if (this.micDenied) view.line = MIC_DENIED_TEXT
     else if (this.paused) view.meta = PAUSED_TEXT
     else if (this.answerVisible && this.answer) view = { ...view, ...answerLines(this.answer) }
+    else if (this.speaker) view.meta = oneLine(this.speaker)
     this.meta.set(view.meta)
     this.line.set(view.line)
     this.corner.set(view.corner)

@@ -142,7 +142,7 @@ export async function askYesNo(prompt: string): Promise<boolean> {
 // answered by then, a second identical call goes out and the first reply wins.
 const CLAUDE_HEDGE_AFTER_MS = 700
 
-async function claudeText(prompt: string, maxTokens: number, timeoutMs: number): Promise<string> {
+export async function claudeText(prompt: string, maxTokens: number, timeoutMs: number): Promise<string> {
   if (!config.anthropicApiKey) throw new Error('Claude selected but ANTHROPIC_API_KEY is missing')
   const done = new AbortController()
   const signal = AbortSignal.any([done.signal, AbortSignal.timeout(timeoutMs)])

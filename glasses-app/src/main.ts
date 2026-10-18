@@ -75,6 +75,10 @@ function handleServer(msg: ServerMessage) {
       phone.setLastAnswer(msg)
       persist()
       return
+    case 'speaker':
+      glasses?.showSpeaker(msg.name)
+      phone.setSpeaker(msg)
+      return
     case 'clear':
       glasses?.dismiss()
       return

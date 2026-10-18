@@ -1,0 +1,5 @@
+# Pinned to the versions verified with the Speaker ID prototype (2026-10-18).
+fastapi==0.143.3
+uvicorn==0.54.0
+numpy==2.5.4
+sherpa-onnx==1.13.8

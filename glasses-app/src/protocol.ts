@@ -28,8 +28,12 @@ export type Answer = {
   source: 'spoken' | 'family'
 }
 
+/** A remembered person is talking to the wearer now, recognized by voice. */
+export type Speaker = { v: 1; type: 'speaker'; name: string; score: number }
+
 export type ServerMessage =
   | Answer
+  | Speaker
   | { v: 1; type: 'clear' }
   | { v: 1; type: 'status'; text: string }
   | { v: 1; type: 'pong' }
@@ -48,6 +52,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
   switch (fields.type) {
     case 'answer':
       return typeof fields.text === 'string' && typeof fields.at === 'string' ? (msg as Answer) : null
+    case 'speaker':
+      return typeof fields.name === 'string' && fields.name.trim() ? (msg as Speaker) : null
     case 'status':
       return typeof fields.text === 'string' ? (msg as ServerMessage) : null
     case 'error':

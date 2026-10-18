@@ -16,8 +16,32 @@ export type QARecord = {
   expiresAt?: string | null // ISO, optional expiry for family facts
 }
 
-/** One finished sentence, kept for the dashboard log and Creao. */
-export type TranscriptLine = { id: string; at: string; role: 'wearer' | 'other' | 'unknown'; name: string | null; text: string }
+/** One finished sentence, kept for the dashboard log and Creao. voiceId: the remembered voice that said it, when known. */
+export type TranscriptLine = { id: string; at: string; role: 'wearer' | 'other' | 'unknown'; name: string | null; text: string; voiceId?: string }
+
+/** Where a voice's name came from: a line heard in conversation, or typed on the voice dashboard. */
+export type NameEvidence = {
+  text: string
+  kind: 'self_intro' | 'answer_to_name_question' | 'addressed_by_wearer' | 'manual'
+  confidence: number
+  by: 'claude' | 'pattern' | 'dashboard'
+  at: string // ISO
+}
+
+/**
+ * A remembered voice (people talking to the wearer, never the wearer). Only named voices are saved;
+ * unnamed ones ("Voice 3") stay in memory until their name is heard.
+ */
+export type VoiceRecord = {
+  id: string
+  seq: number // "Voice <seq>" until named
+  name: string | null
+  samples: number[][] // unit-length voiceprints (384-d, CAM++ and TitaNet fused); the closest one counts
+  createdAt: string // ISO
+  lastSeenAt: string // ISO
+  heard: number // utterances recognized as this voice
+  evidence?: NameEvidence
+}
 
 /** Every wearer question, counted separately from stored answers (so summaries can say "asked 4 times"). */
 export type QuestionEvent = {
@@ -54,6 +78,8 @@ export type PhoneMessage =
 /** Contract 1: server to phone. */
 export type ServerMessage =
   | { v: 1; type: 'answer'; id: string; text: string; speaker: string | null; at: string; source: 'spoken' | 'family' }
+  /** A remembered person is talking to the wearer now (voice recognition); the glasses show the name for a few seconds. */
+  | { v: 1; type: 'speaker'; name: string; score: number }
   | { v: 1; type: 'clear' }
   | { v: 1; type: 'status'; text: string }
   | { v: 1; type: 'pong' }

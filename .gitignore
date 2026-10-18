@@ -10,3 +10,6 @@ dist/
 .DS_Store
 .venv/
 __pycache__/
+
+# voice-service models (130 MB, downloaded on first start)
+voice-service/models/

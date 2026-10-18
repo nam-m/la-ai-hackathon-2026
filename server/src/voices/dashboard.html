@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rewind Voices</title>
+<style>
+  :root {
+    --bg: #0e1013; --panel: #161a1f; --line: #262c34; --text: #e6e9ee; --dim: #8a94a3; --faint: #59616d;
+    --known: #4cc38a; --unknown: #e0a33a; --bad: #e5604f; --accent: #6aa8ff; --bar: #2a313a;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 16px; margin: 0 8px 0 0; letter-spacing: .02em; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 0 0 10px; font-weight: 600; }
+  .chip { font: 12px var(--mono); padding: 3px 8px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: var(--dim); }
+  .chip b { color: var(--text); font-weight: 500; }
+  .ok { color: var(--known) !important; } .warn { color: var(--unknown) !important; } .err { color: var(--bad) !important; }
+  .threshold { display: flex; align-items: center; gap: 8px; font: 12px var(--mono); color: var(--dim); margin-left: auto; }
+  .threshold input { width: 140px; accent-color: var(--accent); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 16px 20px 40px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+  .wide { grid-column: 1 / -1; }
+  .now { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .now .who { min-width: 220px; }
+  .big { font-size: 34px; font-weight: 650; line-height: 1.1; }
+  .sub { color: var(--dim); font: 12px var(--mono); margin-top: 4px; }
+  .bars { flex: 1; min-width: 260px; display: grid; gap: 6px; }
+  .bar { display: grid; grid-template-columns: 110px 1fr 46px; gap: 8px; align-items: center; font: 12px var(--mono); }
+  .bar .track { position: relative; height: 10px; background: var(--bar); border-radius: 5px; overflow: hidden; }
+  .bar .fill { position: absolute; inset: 0 auto 0 0; background: var(--faint); border-radius: 5px; }
+  .bar .fill.hit { background: var(--known); }
+  .bar .tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--accent); }
+  .bar .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: 500; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; padding: 0 8px 6px 0; }
+  td { padding: 7px 8px 7px 0; border-top: 1px solid var(--line); vertical-align: top; }
+  .tag { font: 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; }
+  .quote { color: var(--dim); font-size: 12px; margin-top: 2px; }
+  button { font: 12px inherit; background: var(--bar); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.danger:hover { border-color: var(--bad); color: var(--bad); }
+  .log { font: 12px/1.5 var(--mono); max-height: 520px; overflow: auto; }
+  .log div { padding: 3px 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 64px 92px 1fr; gap: 8px; }
+  .log .t { color: var(--faint); } .log .k { white-space: nowrap; }
+  .k.heard, .k.learned { color: var(--known); } .k.new_voice, .k.name_found { color: var(--accent); } .k.named { color: var(--known); font-weight: 700; }
+  .k.unknown, .k.too_short, .k.wearer_like, .k.wearer, .k.no_name { color: var(--dim); } .k.rejected, .k.name_lost, .k.error { color: var(--bad); }
+  .log .d { overflow-wrap: anywhere; } .log .d i { color: var(--dim); font-style: normal; }
+  .transcript div { padding: 4px 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 64px 110px 1fr; gap: 8px; font-size: 13px; }
+  .transcript .r { font: 12px var(--mono); color: var(--dim); }
+  .empty { color: var(--faint); font-size: 13px; }
+  .keybox { padding: 40px 20px; max-width: 520px; }
+  .keybox input { width: 100%; font: 14px var(--mono); padding: 8px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; margin: 10px 0; }
+  @media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); padding: 12px 16px 32px; } header { padding: 12px 16px; } .threshold { margin-left: 0; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Rewind · Voices</h1>
+  <span class="chip" id="svc">voice-service …</span>
+  <span class="chip" id="names">names …</span>
+  <span class="chip" id="sess">sessions …</span>
+  <span class="chip" id="wearer">wearer …</span>
+  <label class="threshold">threshold <input type="range" id="thr" min="0.30" max="0.80" step="0.01"> <b id="thrv">…</b></label>
+</header>
+<div id="root"></div>
+<script>
+const KEY_STORE = 'rewind-voices-key'
+let key = new URLSearchParams(location.hash.slice(1)).get('key') || ''
+try { if (key) localStorage.setItem(KEY_STORE, key); else key = localStorage.getItem(KEY_STORE) || '' } catch {}
+let state = null, dragging = false
+
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag)
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'class') el.className = v
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v)
+    else if (v !== undefined && v !== null && v !== false) el.setAttribute(k, v)
+  }
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false) el.append(kid instanceof Node ? kid : String(kid))
+  return el
+}
+const time = iso => iso ? new Date(iso).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '–'
+const ago = iso => { if (!iso) return '–'; const s = Math.round((Date.now() - Date.parse(iso)) / 1000); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago` }
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { ...opts, headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json', ...(opts.headers || {}) } })
+  if (res.status === 401) { key = ''; try { localStorage.removeItem(KEY_STORE) } catch {}; askKey('Wrong key.'); throw new Error('unauthorized') }
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || res.statusText)
+  return json
+}
+
+function askKey(note) {
+  const input = h('input', { type: 'password', placeholder: 'FACTS_SECRET from server/.env' })
+  const go = () => { key = input.value.trim(); try { localStorage.setItem(KEY_STORE, key) } catch {}; tick() }
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') go() })
+  document.getElementById('root').replaceChildren(h('div', { class: 'keybox' },
+    h('h2', {}, 'Server key'), note ? h('div', { class: 'err' }, note) : null, input, h('button', { onclick: go }, 'Open')))
+}
+
+function bars(scores, wearer, threshold, best) {
+  const voices = new Map((state.voices || []).map(v => [v.id, v.label]))
+  const rows = Object.entries(scores || {}).sort((a, b) => b[1] - a[1]).slice(0, 8)
+    .map(([id, s]) => [voices.get(id) || id, s, id === best])
+  if (state.wearerSamples) rows.push(['wearer', wearer || 0, false])
+  if (!rows.length) return h('div', { class: 'empty' }, 'No voices to compare yet.')
+  return rows.map(([name, s, hit]) => h('div', { class: 'bar' },
+    h('span', { class: 'name', title: name }, name),
+    h('span', { class: 'track' }, h('span', { class: 'fill' + (hit ? ' hit' : ''), style: `width:${Math.max(0, s) * 100}%` }), h('span', { class: 'tick', style: `left:${threshold * 100}%` })),
+    h('span', {}, s.toFixed(2))))
+}
+
+function nowSection() {
+  const sessions = state.sessions || []
+  if (!sessions.length) return h('section', { class: 'wide' }, h('h2', {}, 'Speaking now'), h('div', { class: 'empty' }, 'No glasses connected.'))
+  return sessions.map(s => {
+    const live = s.live
+    const fresh = live && Date.now() - Date.parse(live.at) < 8000
+    const who = live ? (live.voice || 'unknown') : '–'
+    const cls = !fresh ? '' : live.voice ? 'ok' : 'warn'
+    return h('section', { class: 'wide' },
+      h('h2', {}, `Speaking now · ${s.session}`),
+      h('div', { class: 'now' },
+        h('div', { class: 'who' },
+          h('div', { class: `big ${cls}` }, who),
+          h('div', { class: 'sub' }, live ? `score ${live.score.toFixed(2)} · ${ago(live.at)}` : 'no check yet'),
+          s.turn ? h('div', { class: 'sub' }, `turn ${s.turn.seconds}s${s.turn.voice ? ` · ${s.turn.voice}` : ''}${s.turn.pendingName ? ` · name waiting: ${s.turn.pendingName}` : ''}`) : null,
+          s.waitingForName ? h('div', { class: 'sub warn' }, `wearer said "${s.waitingForName}"; next speaker gets it`) : null),
+        h('div', { class: 'bars' }, live ? bars(live.scores, live.wearer, state.threshold, live.voiceId) : h('div', { class: 'empty' }, 'Waiting for someone other than the wearer to talk.'))))
+  })
+}
+
+function voicesSection() {
+  const rows = (state.voices || []).map(v => h('tr', {},
+    h('td', {}, h('b', { class: v.saved ? 'ok' : 'warn' }, v.label), ' ', h('span', { class: 'tag ' + (v.saved ? 'ok' : 'warn') }, v.saved ? 'saved' : 'temporary'),
+      v.evidence ? h('div', { class: 'quote' }, `“${v.evidence.text}” · ${v.evidence.kind} · ${v.evidence.by} ${Number(v.evidence.confidence).toFixed(2)}`) : null),
+    h('td', {}, v.samples),
+    h('td', {}, v.heard),
+    h('td', { title: v.lastSeenAt }, ago(v.lastSeenAt)),
+    h('td', { title: v.createdAt }, time(v.createdAt)),
+    h('td', {}, h('button', { onclick: () => rename(v) }, v.saved ? 'Rename' : 'Name'), ' ', h('button', { class: 'danger', onclick: () => remove(v) }, 'Delete'))))
+  return h('section', {}, h('h2', {}, `Voices (${(state.voices || []).length})`),
+    rows.length ? h('table', {}, h('tr', {}, ['Voice', 'Samples', 'Heard', 'Last heard', 'Created', ''].map(t => h('th', {}, t))), rows)
+      : h('div', { class: 'empty' }, 'Nobody remembered yet. A voice appears after about 3 s of one person talking; it is saved when their name is heard.'))
+}
+
+function eventsSection() {
+  const rows = (state.events || []).map(e => h('div', {},
+    h('span', { class: 't' }, time(e.at)),
+    h('span', { class: `k ${e.kind}` }, e.kind),
+    h('span', { class: 'd' },
+      e.voice ? h('b', {}, e.voice + ' ') : null,
+      e.score !== undefined ? h('i', {}, `${e.score.toFixed(2)} `) : null,
+      e.seconds !== undefined ? h('i', {}, `${e.seconds}s `) : null,
+      e.ms !== undefined ? h('i', {}, `${e.ms}ms `) : null,
+      e.detail ? h('span', {}, e.detail + ' ') : null,
+      e.text ? h('i', {}, `“${e.text}”`) : null)))
+  return h('section', {}, h('h2', {}, 'Events'), h('div', { class: 'log' }, rows.length ? rows : h('div', { class: 'empty' }, 'Nothing yet.')))
+}
+
+function transcriptSection() {
+  const rows = (state.transcript || []).map(l => h('div', {},
+    h('span', { class: 'r' }, time(l.at)),
+    h('span', { class: 'r ' + (l.role === 'wearer' ? '' : l.voice ? 'ok' : 'warn') }, l.role === 'wearer' ? 'WEARER' : l.role === 'other' ? (l.name || l.voice || 'other') : '?'),
+    h('span', {}, l.text)))
+  return h('section', { class: 'wide' }, h('h2', {}, 'Transcript today (newest first)'), h('div', { class: 'transcript' }, rows.length ? rows : h('div', { class: 'empty' }, 'No speech yet today.')))
+}
+
+function render() {
+  const svc = state.service || {}
+  const svcEl = document.getElementById('svc')
+  svcEl.className = 'chip ' + (svc.state === 'on' ? 'ok' : svc.state === 'degraded' || svc.state === 'not reached yet' ? 'warn' : 'err')
+  svcEl.textContent = `voice-service: ${svc.state}${svc.dim ? ` · ${svc.dim}d` : ''}${svc.lastError ? ` · ${svc.lastError}` : ''}`
+  document.getElementById('names').textContent = `names: ${state.names}`
+  document.getElementById('sess').textContent = `sessions: ${(state.sessions || []).length}`
+  document.getElementById('wearer').textContent = `wearer samples: ${state.wearerSamples}/5`
+  if (!dragging) { document.getElementById('thr').value = state.threshold; document.getElementById('thrv').textContent = state.threshold.toFixed(2) }
+  const scroll = document.querySelector('.log')?.scrollTop ?? 0 // the page redraws every second; keep the log where it was
+  document.getElementById('root').replaceChildren(h('main', {}, nowSection(), voicesSection(), eventsSection(), transcriptSection()))
+  const log = document.querySelector('.log')
+  if (log) log.scrollTop = scroll
+}
+
+async function rename(v) {
+  const name = prompt(`Name for ${v.label}:`, v.name || '')
+  if (!name) return
+  try { await api(`/voices/${encodeURIComponent(v.id)}/name`, { method: 'POST', body: JSON.stringify({ name }) }); tick() } catch (e) { alert(e.message) }
+}
+async function remove(v) {
+  if (!confirm(`Delete ${v.label}? Its voice samples are gone for good.`)) return
+  try { await api(`/voices/${encodeURIComponent(v.id)}`, { method: 'DELETE' }); tick() } catch (e) { alert(e.message) }
+}
+
+const thr = document.getElementById('thr')
+thr.addEventListener('input', () => { dragging = true; document.getElementById('thrv').textContent = Number(thr.value).toFixed(2) })
+thr.addEventListener('change', async () => {
+  try { await api('/voices/settings', { method: 'POST', body: JSON.stringify({ threshold: Number(thr.value) }) }) } finally { dragging = false; tick() }
+})
+
+let timer = null
+async function tick() {
+  clearTimeout(timer)
+  if (!key) return askKey()
+  try { state = await api('/voices/state'); render() }
+  catch (e) { if (e.message !== 'unauthorized') document.getElementById('svc').textContent = `server unreachable: ${e.message}` }
+  if (key) timer = setTimeout(tick, 1000)
+}
+tick()
+</script>
+</body>
+</html>

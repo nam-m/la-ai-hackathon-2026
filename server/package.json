@@ -11,7 +11,7 @@
     "test:matcher": "tsx scripts/test-matcher.ts",
     "fake-phone": "tsx scripts/fake-phone.ts",
     "seed-facts": "tsx scripts/seed-facts.ts",
-    "build": "tsc && node -e \"const fs=require('node:fs');fs.copyFileSync('scripts/fake-script.txt','dist/scripts/fake-script.txt');fs.cpSync('scripts/recorder-web','dist/scripts/recorder-web',{recursive:true})\"",
+    "build": "tsc && node -e \"const fs=require('node:fs');fs.copyFileSync('scripts/fake-script.txt','dist/scripts/fake-script.txt');fs.cpSync('scripts/recorder-web','dist/scripts/recorder-web',{recursive:true});fs.copyFileSync('src/voices/dashboard.html','dist/src/voices/dashboard.html')\"",
     "test": "tsx --test test/*.test.ts",
     "speech:demo": "tsx scripts/speech-demo.ts",
     "speech:record": "node --env-file-if-exists=.env --import tsx scripts/speech-record.ts",
