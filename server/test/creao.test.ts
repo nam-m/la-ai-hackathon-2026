@@ -113,6 +113,7 @@ test('runSummary starts the Daily brief, then saves the agent JSON under that da
   assert.equal(JSON.parse(body.inputs.data_json).days[0].events[0].id, 'real1')
   for (let i = 0; i < 50 && !store.getDay(date)?.summary; i++) await new Promise(r => setTimeout(r, 10))
   assert.equal(store.getDay(date)?.summary?.summary, 'A calm day.')
+  assert.ok(typeof store.getDay(date)?.summary?.generatedAt === 'string') // the family app shows "Last written at"
   assert.equal(store.runRegistry.has('run-sum'), false)
 })
 

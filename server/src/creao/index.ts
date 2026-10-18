@@ -59,7 +59,7 @@ async function launch(agent: AgentName, kind: RunKind, inputs: Record<string, un
 /** Daily brief for one local date; the saved summary appears at GET /summary/today when the run finishes. */
 export async function runSummary(dateIso: string): Promise<string> {
   return launch('dailyBrief', 'summary', { date: dateIso, data_json: dataJsonFor([dateIso]) }, out =>
-    store.saveSummary(dateIso, { ...out, date: dateIso }))
+    store.saveSummary(dateIso, { ...out, date: dateIso, generatedAt: new Date().toISOString() }))
 }
 
 /** Pattern finder over the 7 local dates ending at `dateIso`. */
