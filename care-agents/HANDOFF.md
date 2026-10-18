@@ -64,6 +64,15 @@ Seed data is embedded in each agent as reference data (pasted inline; file attac
 
 **There is no orchestrator agent.** A saved agent cannot call other saved agents (see "Orchestration finding" in `DEMO_RUNBOOK.md`). The orchestration is a prompt typed into CREAO chat, in the workspace where all four agents are installed: "Run the evening routine for 2026-10-17: Open Questions and Pattern finder in parallel, then Daily brief for 2026-10-12, show the combined JSON and per-step times." Say on stage that the chat orchestrates our saved agents.
 
+**Prompt order for the live demo.** Type these into the CREAO chat in this order (the first four are agent runs, then the approve command on the laptop, then the clinician case). Start them in separate tabs before talking, and keep a finished copy of each in another tab as a backup.
+1. Evening routine (runs the recap and the gap finder together): "Run the evening routine for 2026-10-17: Open Questions and Pattern finder in parallel, then Daily brief for 2026-10-12, show the combined JSON and per-step times."
+2. Daily brief on its own, if the combined run is too busy to read: "Daily brief for 2026-10-12."
+3. Open Questions on its own: "Open Questions, end date 2026-10-17."
+4. Care assistant, role caregiver: "I'm visiting Thursday at 3." Expect a proposal replacing fact f1, Thursday 2026-10-22, valid until 2026-10-22T18:00:00. Optional contrast: "Sarah is coming Thursday" gets one clarifying question and no proposal.
+5. On the demo laptop, not in CREAO: save the Care assistant JSON as `proposal.json` and run `approve-proposal.mjs` (command in `DEMO_RUNBOOK.md`, "Approval command"). Sarah types APPROVE; the glasses give the new wording.
+6. Care assistant, role clinician: "Only ask me about a question after 5 asks in a window of 60 minutes." Expect the before/after preview (groups 10 to 3). Optional contrast: "Add a fact that Sarah is coming Friday" is refused. Cut this step first if short on time.
+7. Pattern finder is a pre-run result for the "what we build next" slide: "Pattern finder, end date 2026-10-17, 7 days."
+
 **How the demo shows the pipeline.** Glasses answer a repeated question; the server log (`GET /log/today`) shows what was heard and matched; the CREAO chat runs the agents on the seeded week; Care assistant proposes new wording; `approve-proposal.mjs` posts it after a person types APPROVE; the glasses give the updated answer. CREAO runs on seeded data, not the live log, because `server/src/creao/` is still stubs. State this to the judges.
 
 **Open items.** Server URL and who holds `FACTS_SECRET`; the Sarah fact id on the server; dashboard merge; full rehearsal once; run links for the Devpost block; the Daily brief tone threshold (issue 3 below).
