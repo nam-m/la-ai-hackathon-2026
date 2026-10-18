@@ -243,10 +243,21 @@ addGlyphs(0x2074, 0x2079) // superscripts
 addGlyphs(0x2080, 0x2089) // subscripts
 
 // Typography the font lacks but has a close stand-in for. Odd spaces matter:
-// toLocaleTimeString puts U+202F before "AM".
+// toLocaleTimeString puts U+202F before "AM". Full-width forms matter too:
+// ElevenLabs sometimes ends English sentences with "。" or "？".
 function standIn(cp: number): string | null {
-  if ((cp >= 0x2000 && cp <= 0x200a) || cp === 0x202f || cp === 0x205f) return ' '
+  if ((cp >= 0x2000 && cp <= 0x200a) || cp === 0x202f || cp === 0x205f || cp === 0x3000) return ' '
+  if (cp >= 0xff01 && cp <= 0xff5e) return String.fromCodePoint(cp - 0xfee0) // full-width ASCII
   switch (cp) {
+    case 0x3001:
+      return ','
+    case 0x3002:
+      return '.'
+    case 0x300c:
+    case 0x300d:
+    case 0x300e:
+    case 0x300f:
+      return '"'
     case 0x2018:
     case 0x2019:
       return "'"

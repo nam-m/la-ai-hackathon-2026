@@ -187,8 +187,10 @@ async function claudePick(question: string, records: QARecord[]): Promise<Set<st
   const list = records.map((r, i) => `${i + 1}. ${oneLine(r.question!)}`).join('\n')
   const text = await claudeText(
     'A person just asked a new question. Below are questions asked earlier today. ' +
-    'Which earlier questions ask for the same information, so that the earlier answer would answer the new question? ' +
-    'Different question words (when vs where), different people, or different days are not the same. ' +
+    'Which earlier questions ask for exactly the same information, so that the earlier answer is a correct answer to the new question? ' +
+    'Different wording counts as the same ("Where are my keys?" and "Have you seen my keys?"; "What is for breakfast?" and "What are we eating this morning?"). ' +
+    'They are NOT the same if they ask about a different person or thing (my vs your, Mary vs Sarah, dog vs cat), ' +
+    'a different kind of information (when vs where, a time vs a name), or a different day. ' +
     'Reply with only their numbers separated by commas, or "none".\n' +
     `New question: ${oneLine(question)}\nEarlier questions:\n${list}`,
     30,

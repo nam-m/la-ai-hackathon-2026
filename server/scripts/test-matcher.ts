@@ -1,6 +1,6 @@
 // Tunes the matcher. Stores each "stored" question, then asks the "asked" one.
 // Goal: zero wrong matches first, then as many right matches as possible.
-// Usage: npm run test:matcher            (uses GEMINI_API_KEY if set, else local fallback)
+// Usage: npm run test:matcher            (uses GEMINI_API_KEY if set, else ANTHROPIC_API_KEY, else local fallback)
 //        MATCH_THRESHOLD=0.85 npm run test:matcher
 import fs from 'node:fs'
 import os from 'node:os'
@@ -44,6 +44,7 @@ const shouldNotMatch: [string, string][] = [
   ['When is my doctor appointment?', "What is my doctor's name?"],
   ['What day is it?', 'What time is it?'],
   ['Did the dog get fed?', 'Did the cat get fed?'],
+  ['What is your name?', 'What is my name?'], // matched on the real G2 before the prompt said "my vs your"
 ]
 
 let truePos = 0, falseNeg = 0, falsePos = 0, trueNeg = 0
@@ -66,7 +67,7 @@ const run = async (pairs: [string, string][], expect: boolean) => {
 }
 
 const { config } = await import('../src/config.js')
-console.log(`matcher: ${config.geminiApiKey ? `gemini embeddings, ${config.verifyProvider} yes/no checks` : 'local fallback'}\n`)
+console.log(`matcher: ${config.geminiApiKey ? `gemini embeddings, ${config.verifyProvider} yes/no checks` : config.anthropicApiKey ? `claude (${config.claudeModel})` : 'local fallback'}\n`)
 await run(shouldMatch, true)
 console.log()
 await run(shouldNotMatch, false)
