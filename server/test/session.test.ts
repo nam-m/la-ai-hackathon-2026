@@ -160,7 +160,9 @@ test('real B byte clock cuts exact tone audio after skipped silence and pause; t
   // VAD forwarded 100ms preroll then the 500ms question.
   provider.onUtterance({ text: 'Where is lunch?', startMs: 100, endMs: 600, speaker: null });
   await settle();
-  assert.deepEqual(Buffer.from(clips[0]), first);
+  // Tone gets the question plus up to 350 ms either side (here only silence before it).
+  assert.deepEqual(Buffer.from(clips[0]).subarray(-first.length), first);
+  assert.ok(clips[0].length <= first.length + 350 * 32);
   h.phone.json({ v: 1, type: 'control', action: 'pause' });
   clock += 30_000;
   h.phone.audio(pcm(500, 100)); // deliberately ignored while paused
@@ -169,7 +171,7 @@ test('real B byte clock cuts exact tone audio after skipped silence and pause; t
   h.phone.audio(second);
   provider.onUtterance({ text: 'When is lunch?', startMs: 0, endMs: 500, speaker: null });
   await settle();
-  assert.deepEqual(Buffer.from(clips[1]), second);
+  assert.deepEqual(Buffer.from(clips[1]).subarray(-second.length), second);
   assert.equal(matches, 2);
   tone.resolve(null);
 });

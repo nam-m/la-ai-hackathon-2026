@@ -3,6 +3,7 @@
 import fs from 'node:fs'
 import { Router, type RequestHandler } from 'express'
 import { config } from '../config.js'
+import { toneStatus } from '../emotion/index.js'
 import { reverseGeocode } from '../location/geocode.js'
 import { sessions } from '../session.js'
 import * as store from '../store.js'
@@ -33,6 +34,15 @@ export function voiceRoutes(requireSecret: RequestHandler) {
         .map(v => ({ id: v.id, label: label(v), name: v.name, saved: Boolean(v.name), samples: v.samples.length, createdAt: v.createdAt, lastSeenAt: v.lastSeenAt, heard: v.heard, evidence: v.evidence ?? null })),
       events: voiceEvents().slice(-150).reverse(),
       transcript: store.todaysTranscript().slice(-40).reverse().map(l => ({ ...l, voice: labelOf(l.voiceId) })),
+      tone: toneStatus(),
+      // The wearer's questions today with their estimated tone of voice (emotion2vec), newest first.
+      tones: (() => {
+        const byId = new Map(store.todaysTones().map(t => [t.id, t]))
+        return store.todaysEvents().slice(-40).reverse().map(e => {
+          const t = e.toneId ? byId.get(e.toneId) : undefined
+          return { at: e.at, question: e.question, matched: e.matchedRecordId, quality: t?.quality ?? null, worry: t?.worry ?? null, top: t?.top ?? [], scores: t?.scores ?? {} }
+        })
+      })(),
       home: store.getSettings().home ?? null,
       locations: [...sessions].map(s => s.locationSnapshot()),
       answers: store.answerable()

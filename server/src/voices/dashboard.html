@@ -56,6 +56,9 @@
   .loc .say { font-size: 18px; font-weight: 600; margin: 4px 0 6px; }
   .loc a { color: var(--accent); }
   .answers td.q { color: var(--dim); }
+  .worry { display: inline-block; width: 80px; height: 8px; background: var(--bar); border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 6px; }
+  .worry span { display: block; height: 100%; background: var(--unknown); }
+  .emo { font: 12px var(--mono); color: var(--dim); }
   .keybox { padding: 40px 20px; max-width: 520px; }
   .keybox input { width: 100%; font: 14px var(--mono); padding: 8px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; margin: 10px 0; }
   @media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); padding: 12px 16px 32px; } header { padding: 12px 16px; } .threshold { margin-left: 0; } }
@@ -68,6 +71,7 @@
   <span class="chip" id="names">names …</span>
   <span class="chip" id="sess">sessions …</span>
   <span class="chip" id="wearer">wearer …</span>
+  <span class="chip" id="tone">tone …</span>
   <label class="threshold">threshold <input type="range" id="thr" min="0.30" max="0.80" step="0.01"> <b id="thrv">…</b></label>
 </header>
 <div id="root"></div>
@@ -176,6 +180,22 @@ function answersSection() {
       : h('div', { class: 'empty' }, 'Nothing stored for today yet.'))
 }
 
+function toneSection() {
+  const rows = (state.tones || []).map(t => {
+    const ok = t.quality === 'ok'
+    const top = ok ? t.top.slice(0, 3).map(k => `${k} ${Math.round((t.scores[k] || 0) * 100)}%`).join(' · ') : ''
+    return h('tr', {},
+      h('td', { title: t.at }, time(t.at)),
+      h('td', { class: 'q' }, t.question),
+      h('td', {}, ok ? h('span', {}, h('span', { class: 'worry', title: 'fearful + sad' }, h('span', { style: `width:${Math.round(t.worry * 100)}%` })), `${Math.round(t.worry * 100)}%`) : ''),
+      h('td', { class: 'emo' }, ok ? top : h('span', { class: 'tag ' + (t.quality ? 'warn' : '') }, t.quality ? t.quality.replace('_', ' ') : 'no tone yet')),
+      h('td', {}, t.matched ? h('span', { class: 'tag ok' }, t.matched === 'location' ? 'location' : 'answered') : ''))
+  })
+  return h('section', { class: 'wide' }, h('h2', {}, `Patient's tone of voice (${rows.length} questions today)`),
+    rows.length ? h('table', { class: 'answers' }, h('tr', {}, ['Asked', 'Question', 'Worry', 'Top emotions', ''].map(x => h('th', {}, x))), rows)
+      : h('div', { class: 'empty' }, 'No questions from the wearer yet. Each one gets an estimated tone (emotion2vec); under 1 s of speech is too short to judge.'))
+}
+
 async function setHome(session) {
   try { await api('/location/home', { method: 'POST', body: JSON.stringify({ session }) }); tick() } catch (e) { alert(e.message) }
 }
@@ -228,9 +248,13 @@ function render() {
   document.getElementById('names').textContent = `names: ${state.names}`
   document.getElementById('sess').textContent = `sessions: ${(state.sessions || []).length}`
   document.getElementById('wearer').textContent = `wearer samples: ${state.wearerSamples}/5`
+  const tone = state.tone || {}
+  const toneEl = document.getElementById('tone')
+  toneEl.className = 'chip ' + (tone.state === 'on' ? 'ok' : tone.state === 'off' || tone.state === 'not configured' ? '' : 'warn')
+  toneEl.textContent = `tone: ${tone.state || '?'}`
   if (!dragging) { document.getElementById('thr').value = state.threshold; document.getElementById('thrv').textContent = state.threshold.toFixed(2) }
   const scroll = document.querySelector('.log')?.scrollTop ?? 0 // the page redraws every second; keep the log where it was
-  document.getElementById('root').replaceChildren(h('main', {}, nowSection(), locationSection(), voicesSection(), answersSection(), eventsSection(), transcriptSection()))
+  document.getElementById('root').replaceChildren(h('main', {}, nowSection(), locationSection(), voicesSection(), answersSection(), toneSection(), eventsSection(), transcriptSection()))
   const log = document.querySelector('.log')
   if (log) log.scrollTop = scroll
 }

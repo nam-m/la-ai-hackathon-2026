@@ -39,6 +39,8 @@ const defaultDependencies: SessionDependencies = {
 
 /** How long a spoken pair waits for the answerer's voice check, so the glasses can say "Kevin · 10:40 AM". */
 const ANSWERER_WAIT_MS = 1500
+/** Audio added either side of a question for tone (live questions are often 0.5-0.9 s; tone needs 1 s). */
+const TONE_PAD_MS = 350
 
 export function formatTime(iso: string) {
   return new Intl.DateTimeFormat('en-US', { timeZone: config.timezone, hour: 'numeric', minute: '2-digit' }).format(new Date(iso))
@@ -275,7 +277,9 @@ export class Session {
     store.addEvent({ id: eventId, at: new Date().toISOString(), question: q.text, matchedRecordId: null, matchScore: null })
 
     // Tone runs beside matching and is never awaited here.
-    void this.dependencies.analyzeQuestion(eventId, this.ring.get(q.startMs, q.endMs)).catch(() => undefined)
+    // Padded a little: speech timestamps hug the words, and most questions are under the 1 s tone needs.
+    const toneClip = this.ring.get(Math.max(0, q.startMs - TONE_PAD_MS), Math.min(q.endMs + TONE_PAD_MS, this.ring.receivedMs))
+    void this.dependencies.analyzeQuestion(eventId, toneClip).catch(() => undefined)
 
     // "Where am I?" is answered from the phone's GPS, not from what anyone said.
     if (isWhereAmI(q.text)) {
