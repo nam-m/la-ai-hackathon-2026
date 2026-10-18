@@ -175,7 +175,9 @@ export function saveSummary(date: string, summary: DaySummary) { day(date).summa
 export function savePatterns(report: PatternsReport) {
   const to = typeof report.toIso === 'string' ? report.toIso.trim() : ''
   const end = Date.parse(to)
-  const covered = /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : Number.isNaN(end) ? today() : localDate(new Date(end - 1).toISOString())
+  // A bare date must be a real calendar day ("2026-13-45" isn't), or it would sit in days{} forever: cleanup compares text.
+  const realDay = /^\d{4}-\d{2}-\d{2}$/.test(to) && !Number.isNaN(end) && new Date(end).toISOString().slice(0, 10) === to
+  const covered = realDay ? to : /^\d{4}-\d{2}-\d{2}$/.test(to) || Number.isNaN(end) ? today() : localDate(new Date(end - 1).toISOString())
   day(covered).patterns = report
   scheduleSave()
 }
