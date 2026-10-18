@@ -79,7 +79,7 @@ asked-answered/
 | `server/src/speech/` | B: Speech | Inside the server |
 | `server/` (everything else) and `tone-service/` | C: Server, matching, tone | Docker, or Render/Railway + laptop/Vultr |
 | `server/src/creao/` + the agents inside Creao | D: Creao | Inside the server + Creao's cloud |
-| `web/` | Family app | Static host (Vercel/Netlify), or `npm run dev` |
+| `web/` | Family app | Docker (compose `web`), static host (Vercel/Netlify), or `npm run dev` |
 
 ## Not in the repo
 

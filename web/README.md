@@ -15,6 +15,10 @@ For a dashboard that's never empty, start the server with `DEMO_DATA=1 npm run d
 
 In dev, Vite proxies the API routes to `DEV_SERVER_URL` (default `http://localhost:8080`), so no CORS setup is needed.
 
+## Docker
+
+From the repo root, `docker compose up --build` also serves the app at http://localhost:3000 (`WEB_HOST_PORT` in `./.env`). nginx (`nginx.conf`) proxies the API routes to the server container, so `VITE_API_URL` stays empty. `VITE_WEARER_NAME` comes from `./.env` at build time: rebuild after changing it.
+
 ## Deploy (Vercel, Netlify or any static host)
 
 ```bash
