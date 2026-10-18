@@ -3,8 +3,8 @@
 import 'dotenv/config'
 import WebSocket from 'ws'
 
-const base = process.argv[2] ?? `ws://localhost:${process.env.PORT ?? 8080}/ws`
-const ws = new WebSocket(`${base}?token=${process.env.APP_TOKEN ?? 'change-me-app'}`)
+const base = process.argv[2] ?? `ws://localhost:${process.env.PORT || 8080}/ws`
+const ws = new WebSocket(`${base}?token=${process.env.APP_TOKEN || 'change-me-app'}`)
 const started = Date.now()
 const t = () => `${((Date.now() - started) / 1000).toFixed(1)}s`
 
@@ -38,5 +38,5 @@ ws.on('message', raw => {
 ws.on('close', (code, reason) => console.log(`[${t()}] closed ${code} ${reason}`))
 ws.on('error', e => console.error('error', e.message))
 
-const stopAfter = Number(process.env.FAKE_PHONE_SECONDS ?? 45)
+const stopAfter = Number(process.env.FAKE_PHONE_SECONDS || 45)
 setTimeout(() => { ws.close(); process.exit(0) }, stopAfter * 1000)

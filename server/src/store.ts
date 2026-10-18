@@ -167,9 +167,13 @@ const day = (date: string) => (data.days[date] ??= { log: [] })
 
 export function appendLogEntry(date: string, entry: LogEntry) { day(date).log.push(entry); scheduleSave() }
 export function saveSummary(date: string, summary: DaySummary) { day(date).summary = summary; scheduleSave() }
-/** Filed under the local date the report covers (its toIso), not the day the webhook arrives (spec 8). */
+/**
+ * Filed under the local date the report covers, not the day the webhook arrives (spec 8). Uses the instant just
+ * before toIso, so a period ending at local midnight counts as the day it closes, and a run-time toIso (23:30) as that day.
+ */
 export function savePatterns(report: PatternsReport) {
-  const covered = typeof report.toIso === 'string' && !Number.isNaN(Date.parse(report.toIso)) ? localDate(report.toIso) : today()
+  const end = typeof report.toIso === 'string' ? Date.parse(report.toIso) : NaN
+  const covered = Number.isNaN(end) ? today() : localDate(new Date(end - 1).toISOString())
   day(covered).patterns = report
   scheduleSave()
 }
