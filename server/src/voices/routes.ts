@@ -90,6 +90,15 @@ export function voiceRoutes(requireSecret: RequestHandler) {
     res.json({ removed })
   })
 
+  // Show a name on every connected pair of glasses, to check the display end to end without the voice path.
+  r.post('/debug/speaker', requireSecret, (req, res) => {
+    const name = String(req.body?.name || 'Kevin').trim().slice(0, 30)
+    let sent = 0
+    for (const s of sessions) if (s.send({ v: 1, type: 'speaker', name, score: 1 })) sent++
+    console.log(`[voice] debug: "${name}" sent to ${sent} pair(s) of glasses`)
+    res.json({ sent })
+  })
+
   r.post('/voices/forget-wearer', requireSecret, (_req, res) => {
     gallery().forgetWearer()
     res.json({ ok: true })

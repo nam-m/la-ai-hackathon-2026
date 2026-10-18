@@ -279,3 +279,18 @@ test('session: a reply too short to check on its own takes the voice of the rest
   await settle();
   assert.equal(store.todaysSpokenPairs().find(r => r.answer === 'Hi, I\'m Tom.')?.answeredBy, 'Tom');
 });
+
+test('tracker: a known visitor is shown even when the glasses tag his line "self" or "unknown"; he never becomes the wearer', async () => {
+  const h = tracker([{ fromMs: 0, voice: KEVIN }, { fromMs: 20_000, voice: WEARER }], { 'Hi, I\'m Kevin.': finding('Kevin', 'self_intro') });
+  await h.say('other', 0, 4000, 'Hi, I\'m Kevin.');
+  assert.equal(h.g.list()[0]?.name, 'Kevin');
+  const heardBefore = h.g.list()[0].heard;
+  await h.say('wearer', 6000, 8000, 'The weather is quite lovely today.'); // Kevin, mislabeled by the glasses
+  await h.say('unknown', 10_000, 12_000, 'Lunch is at noon.'); // Kevin again, unsure tag
+  assert.equal(h.t.snapshot().live?.voice, 'Kevin');
+  assert.equal(h.g.wearerSamples, 0); // a visitor's line never teaches the wearer's voice
+  assert.ok(h.sent.some(m => m.type === 'speaker' && m.name === 'Kevin'));
+  await h.say('wearer', 20_000, 22_000, 'It is not showing who is speaking.'); // the real wearer
+  assert.equal(h.g.wearerSamples, 1);
+  assert.equal(h.g.list()[0].heard, heardBefore); // tagged lines show the name but don't count as samples
+});

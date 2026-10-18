@@ -212,7 +212,7 @@ function voicesSection() {
     h('td', {}, v.heard),
     h('td', { title: v.lastSeenAt }, ago(v.lastSeenAt)),
     h('td', { title: v.createdAt }, time(v.createdAt)),
-    h('td', {}, h('button', { onclick: () => rename(v) }, v.saved ? 'Rename' : 'Name'), ' ', h('button', { class: 'danger', onclick: () => remove(v) }, 'Delete'))))
+    h('td', {}, h('button', { onclick: () => rename(v) }, v.saved ? 'Rename' : 'Name'), ' ', h('button', { onclick: () => showOnGlasses(v.label) }, 'Show on glasses'), ' ', h('button', { class: 'danger', onclick: () => remove(v) }, 'Delete'))))
   return h('section', {}, h('h2', {}, `Voices (${(state.voices || []).length})`),
     rows.length ? h('table', {}, h('tr', {}, ['Voice', 'Samples', 'Heard', 'Last heard', 'Created', ''].map(t => h('th', {}, t))), rows)
       : h('div', { class: 'empty' }, 'Nobody remembered yet. A voice appears after about 3 s of one person talking; it is saved when their name is heard.'))
@@ -257,6 +257,10 @@ function render() {
   document.getElementById('root').replaceChildren(h('main', {}, nowSection(), locationSection(), voicesSection(), answersSection(), toneSection(), eventsSection(), transcriptSection()))
   const log = document.querySelector('.log')
   if (log) log.scrollTop = scroll
+}
+
+async function showOnGlasses(name) {
+  try { const r = await api('/debug/speaker', { method: 'POST', body: JSON.stringify({ name }) }); if (!r.sent) alert('No glasses connected (or paused).') } catch (e) { alert(e.message) }
 }
 
 async function rename(v) {

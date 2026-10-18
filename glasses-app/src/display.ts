@@ -81,6 +81,7 @@ export class Glasses {
   private answerVisible = false
   private speaker: string | null = null
   private speakerTimer: ReturnType<typeof setTimeout> | undefined
+  private answerHideAt = 0
   private paused = false
   private micDenied = false
   private offline = false
@@ -137,15 +138,19 @@ export class Glasses {
     this.render()
   }
 
-  /** Who is talking, in the dim line, for a few seconds. An answer takes the line over. */
+  /**
+   * Who is talking, in the dim line, for a few seconds. An answer on screen keeps the line; the name then waits
+   * and shows for its full time once the answer goes (live, the name arrived with an answer and was never seen).
+   */
   showSpeaker(name: string) {
     clearTimeout(this.speakerTimer)
     this.speaker = name
     this.render()
+    const waiting = this.answerVisible ? Math.max(0, this.answerHideAt - Date.now()) : 0
     this.speakerTimer = setTimeout(() => {
       this.speaker = null
       this.render()
-    }, SPEAKER_SHOW_MS)
+    }, waiting + SPEAKER_SHOW_MS)
   }
 
   setPaused(paused: boolean) {
@@ -181,6 +186,7 @@ export class Glasses {
   private reveal() {
     clearTimeout(this.hideTimer)
     this.answerVisible = true
+    this.answerHideAt = Date.now() + ANSWER_SHOW_MS
     this.render()
     this.hideTimer = setTimeout(() => this.dismiss(), ANSWER_SHOW_MS)
   }

@@ -12,6 +12,9 @@ const TURN_GAP_MS = 1500 // other-lines closer than this (with no wearer line be
 const TURN_WINDOW_MS = 6000 // newest audio of the turn used per check
 const PAD_MS = 300 // speech timestamps hug the words; a little either side gives the short lines more voice
 const RECENT_MS = 30_000 // the person who just talked to the wearer stays the likely one across the wearer's replies
+// The glasses' own role tags are often wrong for a visitor close by (live test: Kevin's lines came back "self"
+// or "unknown"). Those lines are still checked against known voices; a "self" line needs this much more to count.
+const MISLABELED_EXTRA = 0.15
 const MIN_CLIP_MS = 700
 const SHORT_SEC = 1.0 // under this much speech, only a strong match counts and no new voice is made
 const WEARER_MIN_MS = 1500 // wearer lines at least this long teach the wearer's own voice
@@ -103,9 +106,11 @@ export class VoiceTracker {
   onUtterance(u: Utterance, transcriptId: string) {
     if (u.role === 'wearer') {
       this.endTurn()
-      void this.learnWearer(u)
+      void this.checkTagged(u, 'wearer')
     } else if (u.role === 'other') {
       this.onOther(u, transcriptId)
+    } else {
+      void this.checkTagged(u, 'unknown')
     }
     this.context.push({ role: u.role, text: u.text, turn: u.role === 'other' ? this.turn : null })
     if (this.context.length > CONTEXT_LINES) this.context.shift()
@@ -248,15 +253,33 @@ export class VoiceTracker {
     this.log({ kind: 'shown', voice: name, score, detail: sent === false ? 'NOT sent: glasses not connected or paused' : 'sent to the glasses' })
   }
 
-  private async learnWearer(u: Utterance) {
-    if (this.learningWearer || this.gallery.wearerSamples >= 5 || u.endMs - u.startMs < WEARER_MIN_MS) return
-    const clip = this.deps.clip(u.startMs, u.endMs)
-    if (!clip) return
+  /**
+   * A line the glasses tagged as the wearer's or as unsure: if it is clearly a remembered visitor, show their name
+   * (a wearer-tagged line needs a stronger match). Otherwise a clear wearer line may teach the wearer's own voice,
+   * but only when it sounds like nobody known, so a mislabeled visitor never becomes "the wearer".
+   */
+  private async checkTagged(u: Utterance, role: 'wearer' | 'unknown') {
+    const clip = this.deps.clip(u.startMs - PAD_MS, u.endMs + PAD_MS)
+    if (!clip || clip.byteLength < MIN_CLIP_MS * 32) return
+    const r = await this.deps.embed(clip)
+    if (!r.ok) return
+    const g = this.gallery
+    const recent = this.recent && u.startMs - this.recent.atMs < RECENT_MS ? g.get(this.recent.voiceId)?.id ?? null : null
+    const id = g.identify(r.print.whole, recent)
+    const v = id.id ? g.get(id.id) : undefined
+    const bar = g.threshold + (role === 'wearer' ? MISLABELED_EXTRA : 0) + (r.print.seconds < SHORT_SEC ? VOICE.STRONG : 0)
+    if (v && id.score >= bar && !id.wearerLike) {
+      this.recent = { voiceId: v.id, atMs: u.endMs }
+      this.live = { at: new Date().toISOString(), voiceId: v.id, voice: label(v), score: id.score, scores: id.scores, wearer: id.wearer }
+      this.log({ kind: 'heard', voiceId: v.id, voice: label(v), text: u.text, score: id.score, scores: id.scores, seconds: r.print.seconds, ms: r.print.ms, detail: `tagged "${role === 'wearer' ? 'self' : 'unknown'}" by the glasses` })
+      if (v.name) this.announce(v.name, id.score)
+      return
+    }
+    if (role !== 'wearer' || this.learningWearer || g.wearerSamples >= 5 || r.print.seconds < WEARER_MIN_MS / 1000) return
+    if (id.score >= g.threshold - VOICE.MARGIN) return // could be a visitor: never learn the wearer from it
     this.learningWearer = true
     try {
-      const r = await this.deps.embed(clip)
-      if (r.ok && r.print.seconds >= WEARER_MIN_MS / 1000 && this.gallery.addWearer(r.print.whole))
-        this.log({ kind: 'wearer', text: u.text, seconds: r.print.seconds, detail: `wearer voice sample ${this.gallery.wearerSamples}/5` })
+      if (g.addWearer(r.print.whole)) this.log({ kind: 'wearer', text: u.text, score: id.score, seconds: r.print.seconds, detail: `wearer voice sample ${g.wearerSamples}/5` })
     } finally {
       this.learningWearer = false
     }
