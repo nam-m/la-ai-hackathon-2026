@@ -143,7 +143,8 @@ async function stepfunYesNo(prompt: string): Promise<boolean> {
   if (!res.ok) throw new Error(`stepfun verify ${res.status}: ${(await res.text()).slice(0, 200)}`)
   const json = (await res.json()) as { choices?: { message?: { content?: string }; finish_reason?: string }[] }
   const choice = json.choices?.[0]
-  const text = choice?.message?.content ?? ''
+  // Some reasoning models think inline: drop <think>…</think>, and an unclosed <think>… cut off by max_tokens.
+  const text = (choice?.message?.content ?? '').replace(/<think>[\s\S]*?(<\/think>|$)/gi, '')
   if (!text.trim() && Date.now() - lastEmptyWarnAt > 60_000) {
     // Counts as "no" either way; say why, so it doesn't look like "nothing matches".
     lastEmptyWarnAt = Date.now()
