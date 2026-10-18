@@ -47,7 +47,7 @@ Seed data is embedded in each agent as reference data (pasted inline; file attac
 
 ## Next steps
 
-1. Paste the `data_json` edit into each agent in CREAO chat (text in this folder's history: add one optional `data_json` input, use it instead of the seed files when given, keep outputs unchanged), then run one real call per agent and check the output has `schema_version`.
+1. Paste the `data_json` edit into each agent in CREAO chat (exact text and a check in `DATA_JSON_EDIT.md`), then run one real call per agent and check the output has `schema_version`.
 2. Deploy the server, set the four `CAPI_KEY_*` values and `FACTS_SECRET` on the host (never in the repo), sign the family app in with the key.
 3. One full rehearsal, then create the install links and a run link, and fill the Devpost block.
 4. Schedule is automatic (summary 20:00, patterns 23:30, open questions every 30 minutes). Keep credits in mind: each run costs.
