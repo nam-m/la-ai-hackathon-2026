@@ -1,22 +1,29 @@
 {
-  "name": "evenhub-asr",
+  "name": "rewind-glasses-app",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "mock": "tsx dev/mock-server.ts",
+    "fake-phone": "tsx dev/fake-phone.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.dev.json",
+    "build": "npm run typecheck && vite build",
     "preview": "vite preview",
     "pack": "npm run build && evenhub pack app.json dist",
     "simulate": "evenhub-simulator http://localhost:5173"
   },
   "dependencies": {
-    "@evenrealities/even_hub_sdk": "^0.0.10"
+    "@evenrealities/even_hub_sdk": "^0.0.16"
   },
   "devDependencies": {
-    "@evenrealities/evenhub-cli": "^0.1.12",
-    "@evenrealities/evenhub-simulator": "^0.7.2",
+    "@evenrealities/evenhub-cli": "^0.1.14",
+    "@evenrealities/evenhub-simulator": "^0.9.5",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.0",
-    "vite": "^5.4.0"
+    "vite": "^5.4.0",
+    "ws": "^8.18.0"
   }
 }

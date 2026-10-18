@@ -1,13 +1,20 @@
 {
-  "package_id": "com.example.evenhubasr",
+  "package_id": "com.lahacks.rewind",
   "edition": "202601",
-  "name": "Even Hub ASR",
+  "name": "Rewind",
   "version": "0.1.0",
-  "min_app_version": "2.0.0",
-  "min_sdk_version": "0.0.10",
+  "min_sdk_version": "0.0.16",
   "entrypoint": "index.html",
   "permissions": [
-    { "name": "g2-microphone", "desc": "Capture audio from the glasses mic for live transcription." }
+    {
+      "name": "g2-microphone",
+      "desc": "Listens through the glasses mics so Rewind can show answers your family already gave."
+    },
+    {
+      "name": "network",
+      "desc": "Streams audio to the Rewind server and receives answers to show on the glasses.",
+      "whitelist": ["wss://rewind-server.example.com"]
+    }
   ],
   "supported_languages": ["en"]
 }

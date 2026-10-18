@@ -1,161 +1,196 @@
-import {
-  waitForEvenAppBridge,
-  TextContainerProperty,
-  CreateStartUpPageContainer,
-  TextContainerUpgrade,
-  OsEventTypeList,
-} from '@evenrealities/even_hub_sdk'
-import { startSttStream } from './asr/stt'
-import { mountUi, setStatus, setTranscript } from './ui'
+import { waitForEvenAppBridge, type AudioEvent } from '@evenrealities/even_hub_sdk'
+import { Mic, type MicState } from './audio'
+import { RoleWindow, Recording, dbfs } from './debug'
+import { Glasses } from './display'
+import { gestureOf, type Gesture } from './gestures'
+import { mountPhone } from './phone'
+import type { ServerMessage } from './protocol'
+import { ServerSocket, type SocketState } from './socket'
+import { loadState, saveState } from './state'
 
-mountUi()
+const RECORD_SECONDS = 30
 
-const API_KEY = import.meta.env.VITE_STT_API_KEY as string
-if (!API_KEY) {
-  setStatus('error', 'VITE_STT_API_KEY not set — copy .env.example to .env.local')
-  console.warn('VITE_STT_API_KEY is not set.')
-}
+// Set once the glasses page exists; phone buttons and gestures do nothing before that.
+let glasses: Glasses | undefined
+let paused = false
+let recording: Recording | null = null
+const roles = new RoleWindow()
+
+// Mount the phone UI first so it shows something while the bridge comes up.
+const phone = mountPhone({
+  togglePause: () => void setPaused(!paused),
+  showLast: () => glasses?.reshowLast(),
+  record: startRecording,
+})
+phone.setNote('Waiting for the Even app...')
 
 const bridge = await waitForEvenAppBridge()
+const saved = await loadState(bridge)
+paused = saved.paused
 
-const transcript = new TextContainerProperty({
-  xPosition: 0,
-  yPosition: 0,
-  width: 576,
-  height: 288,
-  borderWidth: 0,
-  borderColor: 5,
-  paddingLength: 4,
-  containerID: 1,
-  containerName: 'transcript',
-  content: 'Listening…',
-  isEventCapture: 1,
+const socket = new ServerSocket({ onMessage: handleServer, onState: handleSocketState })
+const mic = new Mic(bridge, { onChunk: handleChunk, onState: handleMicState })
+
+try {
+  glasses = await Glasses.create(bridge, view => phone.setView(view))
+} catch (err) {
+  phone.setNote((err as Error).message)
+  throw err
+}
+glasses.restore(saved.lastAnswer)
+glasses.setPaused(paused)
+phone.setPaused(paused)
+phone.setMic(mic.state, paused)
+phone.setNote('')
+
+const unsubscribe = bridge.onEvenHubEvent(event => {
+  if (event.audioEvent) mic.handleChunk(event.audioEvent)
+  const gesture = gestureOf(event)
+  if (gesture) handleGesture(gesture)
 })
 
-const created = await bridge.createStartUpPageContainer(
-  new CreateStartUpPageContainer({ containerTotalNum: 1, textObject: [transcript] }),
-)
-if (created !== 0) {
-  setStatus('error', `createStartUpPageContainer failed: ${created}`)
-  console.error('Failed to create startup page')
+let lastBytes = 0
+const rateTimer = setInterval(() => {
+  phone.setRate((socket.bytesSent - lastBytes) / 1024)
+  lastBytes = socket.bytesSent
+}, 1_000)
+
+socket.start()
+// The glasses mic needs the startup page, which exists by now.
+if (!paused) await mic.ensureOn()
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') resume()
+})
+window.addEventListener('beforeunload', cleanup)
+
+function handleServer(msg: ServerMessage) {
+  switch (msg.type) {
+    case 'answer':
+      glasses?.showAnswer(msg)
+      persist()
+      return
+    case 'clear':
+      glasses?.dismiss()
+      return
+    case 'status':
+      phone.setNote(`Server: ${msg.text}`)
+      return
+    case 'error':
+      console.warn('[server]', msg.code, msg.message)
+      phone.setNote(`Server error ${msg.code}: ${msg.message}`)
+      return
+    case 'pong':
+      return
+  }
 }
 
-let lastRender = ''
-let renderTimer: number | null = null
-let currentContent = 'Listening…'
-
-function scheduleGlassesRender() {
-  if (renderTimer !== null) return
-  renderTimer = window.setTimeout(async () => {
-    renderTimer = null
-    if (currentContent === lastRender) return
-    lastRender = currentContent
-    await bridge.textContainerUpgrade(
-      new TextContainerUpgrade({
-        containerID: 1,
-        containerName: 'transcript',
-        content: currentContent,
-      }),
-    )
-  }, 120) // debounce display writes — BLE render queue is slow
+function handleSocketState(state: SocketState) {
+  phone.setServer(state)
+  glasses?.setConnected(state === 'open')
+  // Every new connection starts out listening on the server side.
+  if (state === 'open' && paused) socket.send({ v: 1, type: 'control', action: 'pause' })
 }
 
-// The default stt.ts is a blank stub that throws. Catch the throw so the UI
-// surfaces the "configure stt.ts" error chip instead of hanging on "Connecting…".
-let stt: ReturnType<typeof startSttStream> | null = null
-try {
-  stt = startSttStream(
-    API_KEY,
-    ({ finalText, interimText }) => {
-      const combined = (finalText + interimText).trim()
-      // 240 chars is a rough fit for the 576x288 text container at default font.
-      currentContent = combined ? combined.slice(-240) : 'Listening…'
-      setTranscript(finalText, interimText)
-      scheduleGlassesRender()
-    },
-    err => {
-      setStatus('error', `STT error: ${(err as Error)?.message ?? err}`)
-      console.error('STT error:', err)
-    },
-  )
-} catch (err) {
-  setStatus('error', (err as Error)?.message ?? 'STT startup failed')
-  console.error('STT startup failed:', err)
+function handleMicState(state: MicState) {
+  phone.setMic(state, paused)
+  glasses?.setMicDenied(state === 'denied')
 }
 
-let micOn = false
-if (stt) {
-  await bridge.audioControl(true)
-  micOn = true
-  setStatus('listening', 'Microphone live · tap to pause · double-tap to exit')
+function handleChunk(event: AudioEvent) {
+  socket.sendAudio(event.audioPcm)
+
+  const level = dbfs(event.audioPcm)
+  roles.push(event.speakerRole)
+  phone.setLevel(level, event.speakerRole, event.direction, roles.counts())
+  if (!recording) return
+  const full = recording.push(event.audioPcm, { db: level, role: event.speakerRole, direction: event.direction })
+  if (full) void finishRecording()
+  else phone.setRecording(`Recording... ${Math.round(recording.progress * 100)}%`, true)
 }
 
-// Tap toggles capture. `audioControl(false)` stops the host pushing PCM, so no
-// further frames reach `sendPcm`; the STT client itself is left open. If your
-// provider closes an idle stream, tear it down here and reopen it on resume.
-// No-ops until stt.ts is wired up — there is no capture to pause.
-function toggleMic() {
-  if (!stt) return
-  micOn = !micOn
-  bridge.audioControl(micOn)
-  currentContent = micOn ? 'Listening…' : 'Paused'
-  scheduleGlassesRender()
-  setStatus(
-    micOn ? 'listening' : 'paused',
-    micOn ? 'Microphone live · tap to pause · double-tap to exit' : 'Paused · tap to resume · double-tap to exit',
-  )
+function handleGesture(gesture: Gesture) {
+  switch (gesture) {
+    case 'tap':
+      // While the mic is blocked, tap is the retry once the wearer allows it.
+      if (mic.state === 'denied') void mic.ensureOn()
+      else glasses?.dismiss()
+      return
+    case 'double-tap':
+      // The root page must use the system exit dialog (mode 1). Cleanup waits
+      // for SYSTEM_EXIT_EVENT, since the wearer can still cancel.
+      void bridge.shutDownPageContainer(1)
+      return
+    case 'swipe-up':
+      glasses?.reshowLast()
+      return
+    case 'swipe-down':
+      return
+    case 'long-press':
+      void setPaused(!paused)
+      return
+    case 'foreground':
+      resume()
+      return
+    case 'exit':
+      cleanup()
+      return
+  }
+}
+
+async function setPaused(next: boolean) {
+  if (!glasses || next === paused) return
+  paused = next
+  glasses.setPaused(paused)
+  phone.setPaused(paused)
+  phone.setMic(mic.state, paused)
+  socket.send({ v: 1, type: 'control', action: paused ? 'pause' : 'resume' })
+  persist()
+  // Pause turns the mic fully off, not just the upload: nothing is heard while paused.
+  if (paused) await mic.off()
+  else await mic.ensureOn()
+}
+
+// Phone unlocked, WebView back in front, OS menu closed: re-check both links.
+function resume() {
+  if (!glasses) return
+  socket.ensureConnected()
+  if (!paused) void mic.ensureOn()
+}
+
+function persist() {
+  saveState(bridge, { paused, lastAnswer: glasses?.lastAnswer ?? null })
+}
+
+function startRecording() {
+  if (!glasses || recording) return
+  if (paused || mic.state !== 'live') {
+    phone.setRecording('Mic is not live. Resume first.', false)
+    return
+  }
+  recording = new Recording(RECORD_SECONDS)
+  phone.setRecording('Recording... 0%', true)
+}
+
+async function finishRecording() {
+  const done = recording
+  recording = null
+  if (!done) return
+  phone.setRecording('Uploading...', true)
+  try {
+    const name = await done.upload()
+    phone.setRecording(`Saved dev/recordings/${name}.wav`, false)
+  } catch (err) {
+    phone.setRecording(`Upload failed: ${(err as Error).message}`, false)
+  }
 }
 
 let cleanedUp = false
 function cleanup() {
   if (cleanedUp) return
   cleanedUp = true
-  bridge.audioControl(false)
-  stt?.close()
+  clearInterval(rateTimer)
   unsubscribe()
+  socket.stop()
+  void mic.off()
 }
-
-// Reads the event type out of one envelope.
-//
-// CLICK_EVENT is 0, and protobuf omits zero-value fields on the wire, so a
-// single tap arrives as an envelope whose `eventType` is `undefined`. The
-// default has to be resolved INSIDE the envelope check. Writing
-// `event.sysEvent?.eventType ?? OsEventTypeList.CLICK_EVENT` instead would
-// read CLICK on events that carry no `sysEvent` at all — and in this template
-// that means every incoming audio frame would fire the tap handler.
-function eventTypeOf(envelope?: { eventType?: OsEventTypeList }): OsEventTypeList | null {
-  if (!envelope) return null
-  return envelope.eventType ?? OsEventTypeList.CLICK_EVENT
-}
-
-// Event routing, critical details:
-//   • Taps/double-taps/lifecycle come through `event.sysEvent`.
-//     Audio PCM frames come through `event.audioEvent` — separate branch.
-//   • Double-tap → `shutDownPageContainer(1)` is a root-level check: it
-//     must fire no matter which envelope the event arrives in, so users
-//     can always exit the app. System exit confirmation dialog appears;
-//     SYSTEM_EXIT_EVENT fires on confirm and we clean up there.
-//   • Check DOUBLE_CLICK_EVENT before CLICK_EVENT.
-const unsubscribe = bridge.onEvenHubEvent(event => {
-  const pcm = event.audioEvent?.audioPcm
-  if (pcm) stt?.sendPcm(pcm)
-
-  const sysType = eventTypeOf(event.sysEvent)
-  const textType = eventTypeOf(event.textEvent)
-
-  if (sysType === OsEventTypeList.DOUBLE_CLICK_EVENT || textType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
-    bridge.shutDownPageContainer(1)
-    return
-  }
-
-  if (sysType === OsEventTypeList.CLICK_EVENT || textType === OsEventTypeList.CLICK_EVENT) {
-    toggleMic()
-    return
-  }
-
-  if (sysType === OsEventTypeList.SYSTEM_EXIT_EVENT || sysType === OsEventTypeList.ABNORMAL_EXIT_EVENT) {
-    cleanup()
-  }
-})
-
-window.addEventListener('beforeunload', cleanup)
