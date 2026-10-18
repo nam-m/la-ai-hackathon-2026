@@ -223,10 +223,27 @@ export class VoiceTracker {
     this.lastTurn = turn
     this.turn = null
     this.current = null // a pause or the wearer ends the turn: the next voice must clear the full threshold
-    void turn.queue.then(() => {
-      if (turn.pendingName && !turn.voiceId)
-        this.log({ kind: 'name_lost', text: turn.pendingName.text, detail: `${turn.pendingName.finding.name}: not enough of their voice to remember` })
-    })
+    void turn.queue.then(() => this.settleName(turn))
+  }
+
+  /** The voice that talked to the wearer within 30 s of this moment, if any. */
+  private recentVoice(atMs: number) {
+    return this.recent && Math.abs(atMs - this.recent.atMs) < RECENT_MS ? this.gallery.get(this.recent.voiceId) : undefined
+  }
+
+  /**
+   * A turn is over and still holds a name it couldn't place ("I'm Kevin." is too short to check by voice):
+   * it goes to the voice heard just before, if there is one; otherwise it is lost.
+   */
+  private settleName(turn: Turn) {
+    const pending = turn.pendingName
+    if (!pending || turn.voiceId) return
+    turn.pendingName = undefined
+    const v = this.recentVoice(turn.startMs)
+    if (!v) return this.log({ kind: 'name_lost', text: pending.text, detail: `${pending.finding.name}: not enough of their voice to remember` })
+    turn.voiceId = v.id
+    this.log({ kind: 'name_found', text: pending.text, voiceId: v.id, voice: label(v), detail: `${pending.finding.name}: their line was too short to check, so it goes to the voice heard just before` })
+    this.applyName(turn, pending)
   }
 
   private async identify(turn: Turn, u: Utterance, transcriptId: string): Promise<string | null> {
@@ -362,6 +379,8 @@ export class VoiceTracker {
     const { finding, text } = pending
     if (!turn.voiceId) {
       turn.pendingName = pending
+      // A turn that is already over gets no more voice: place the name now.
+      if (turn !== this.turn) return void turn.queue.then(() => this.settleName(turn))
       return this.log({ kind: 'name_found', text, detail: `${finding.name}, ${finding.kind}, ${finding.by} ${finding.confidence.toFixed(2)}; waiting for enough of their voice` })
     }
     const before = this.gallery.get(turn.voiceId)

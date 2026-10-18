@@ -80,7 +80,7 @@ test('gallery: naming saves the voice; a second voice with the same name merges 
   const { saved, persist } = memory();
   const g = new Gallery(persist, 0.47);
   const kevin = g.createUnnamed(print(KEVIN)) as VoiceRecord;
-  assert.equal(saved.size, 0); // unnamed voices are not saved
+  assert.equal(saved.get(kevin.id)?.name, null); // unnamed voices are kept too, so a later name still finds them
   const named = g.assignName(kevin.id, 'kevin.', evidence);
   assert.ok(named.ok);
   assert.equal(saved.get(kevin.id)?.name, 'Kevin');
@@ -99,10 +99,10 @@ test('gallery: naming saves the voice; a second voice with the same name merges 
   assert.equal(g.get(kevin2.id)?.id, kevin.id); // the merged id still resolves
   assert.equal(saved.get(kevin.id)?.samples.length, 2);
 
-  // Restart: the named voice comes back from the store.
+  // Restart: Kevin comes back from the store, and so does the unnamed voice whose name was refused.
   const again = new Gallery(persist, 0.47);
   assert.equal(again.identify(KEVIN, null).id, kevin.id);
-  assert.equal(again.list().length, 1);
+  assert.deepEqual(again.list().map(v => v.name).sort(), ['Kevin', null]);
 });
 
 test('names: the cheap filter and the no-key patterns', () => {
@@ -343,4 +343,32 @@ test('session: "Who are you?" is never stored as a pair', async (t: TestContext)
   options.onPair({ question: q, answer: a });
   await settle();
   assert.equal(store.allRecords().some(r => r.answer === "Hi, I'm Dora, the new nurse."), false);
+});
+
+test('tracker: a voice remembered without a name gets it later, even from a line too short to check', async () => {
+  const { persist } = memory();
+  const g = new Gallery(persist, 0.47);
+  const sent: ServerMessage[] = [];
+  const t = new VoiceTracker({
+    session: () => 'test', gallery: g,
+    clip: (startMs, endMs) => new Uint8Array(Math.round((endMs - startMs) * 32)),
+    embed: async pcm => ({ ok: true, print: print(KEVIN, pcm.byteLength / 32_000) }),
+    extractName: async lines => lines[lines.length - 1].text === "I'm Kevin." ? finding('Kevin', 'self_intro') : null,
+    send: msg => void sent.push(msg),
+  });
+  let n = 0;
+  const say = async (role: Utterance['role'], startMs: number, endMs: number, text: string) => {
+    t.onUtterance({ id: `s${++n}`, role, isWearer: role === 'wearer', text, startMs, endMs, rmsDb: -30, speaker: null, name: null }, `l${n}`);
+    await settle();
+  };
+  await say('other', 0, 5000, 'I come by every Sunday to read the paper with you.');
+  assert.equal(g.list()[0]?.name, null); // remembered, no name yet
+  // A restart keeps the unnamed voice.
+  assert.equal(new Gallery(persist, 0.47).list().length, 1);
+  await say('wearer', 6000, 7000, 'Who are you again?');
+  await say('other', 8000, 8400, "I'm Kevin."); // 0.4 s: too short to check by voice
+  await say('wearer', 9000, 10_000, 'Oh, nice.'); // the turn ends
+  await settle();
+  assert.equal(g.list()[0]?.name, 'Kevin');
+  assert.equal(g.list().length, 1);
 });

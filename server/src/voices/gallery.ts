@@ -13,7 +13,7 @@ export const VOICE = {
   MIN_SAMPLE_SEC: 3, // speech needed for a new voice or a new sample
   MAX_SAMPLES: 10,
   MAX_UNNAMED: 20,
-  UNNAMED_TTL_MS: 30 * 60_000, // an unnamed voice not heard for this long is forgotten
+  UNNAMED_TTL_MS: 24 * 3600_000, // an unnamed voice not heard for this long is forgotten (kept in the store till then)
   WEARER_SAMPLES: 5,
 }
 
@@ -98,6 +98,7 @@ export class Gallery {
     const at = now.toISOString()
     const v: VoiceRecord = { id: `voice_${now.getTime().toString(36)}${this.nextSeq}`, seq: this.nextSeq++, name: null, samples: [round(print.whole)], createdAt: at, lastSeenAt: at, heard: 1 }
     this.voices.set(v.id, v)
+    this.persist.save(v) // unnamed voices are kept too, so a name heard later (even after a restart) still finds them
     return v
   }
 
@@ -111,7 +112,7 @@ export class Gallery {
     const learn = v.samples.length < VOICE.MAX_SAMPLES && matchScore >= this.threshold + VOICE.STRONG && own < VOICE.REDUNDANT
       && print.seconds >= VOICE.MIN_SAMPLE_SEC && Gallery.oneVoice(print)
     if (learn) v.samples.push(round(print.whole))
-    if (v.name) this.persist.save(v)
+    this.persist.save(v)
     return learn
   }
 
@@ -159,7 +160,7 @@ export class Gallery {
     const v = this.get(id)
     if (!v || v.about?.text === text) return
     v.about = { text, at: v.about?.at ?? at }
-    if (v.name) this.persist.save(v)
+    this.persist.save(v)
   }
 
   /** A named voice by name, any case. */
@@ -171,19 +172,19 @@ export class Gallery {
     const v = this.voices.get(id)
     if (!v) return false
     this.voices.delete(id)
-    if (v.name) this.persist.remove(id)
+    this.persist.remove(id)
     return true
   }
 
   forgetWearer() { this.wearer = [] }
 
   private prune(now = Date.now()) {
-    for (const v of this.voices.values()) if (!v.name && now - Date.parse(v.lastSeenAt) > VOICE.UNNAMED_TTL_MS) this.voices.delete(v.id)
+    for (const v of this.voices.values()) if (!v.name && now - Date.parse(v.lastSeenAt) > VOICE.UNNAMED_TTL_MS) this.remove(v.id)
   }
 
   /** Keep at most `max` unnamed voices: the least recently heard go first. */
   private pruneUnnamed(max: number) {
     const unnamed = [...this.voices.values()].filter(v => !v.name).sort((a, b) => a.lastSeenAt.localeCompare(b.lastSeenAt))
-    for (const v of unnamed.slice(0, Math.max(0, unnamed.length - max))) this.voices.delete(v.id)
+    for (const v of unnamed.slice(0, Math.max(0, unnamed.length - max))) this.remove(v.id)
   }
 }
