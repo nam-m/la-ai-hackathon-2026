@@ -30,7 +30,8 @@ With `SPEECH_PROVIDER=fake`, the server replays `scripts/fake-script.txt` as if 
 | `src/store.ts` | C | Q&A records and cached embeddings, saved to a JSON file |
 | `src/types.ts` | all | Contract shapes |
 | `src/speech/index.ts` | **B** | ElevenLabs live speech, Deepgram fallback, fake provider; [Role B setup and calibration](src/speech/README.md) |
-| `src/creao/index.ts` | **D** | Creao module; ships as logging stubs. D replaces them |
+| `src/creao/index.ts` | **D** | Creao module: `runSummary` and `runPatterns` start the saved agents through `capi.ts`; `submitClip`, `submitLog` and `handleWebhook` are still logging stubs |
+| `src/creao/capi.ts`, `input.ts` | D | Trigger API client (one `capi_` key per agent, env vars) and the builder that turns server events, tone and facts into the agents' `data_json` input |
 | `src/emotion/index.ts` | C | Cuts each wearer question's audio, sends it to `tone-service/`, stores the tone record |
 | `src/wav.ts` | C | WAV header and the 60-second rolling audio buffer |
 
