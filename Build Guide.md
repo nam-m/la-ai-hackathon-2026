@@ -47,6 +47,7 @@ URL: `wss://<server>/ws?token=<APP_TOKEN>`. The token only keeps random clients 
 - `at` is already formatted in the wearer's time zone; the phone shows it as is.
 - At most one `answer` per question. `error` codes: `stt_down`, `bad_audio`, `unauthorized`.
 - The phone pings every 15 s and reconnects with backoff of 1, 2, 4, then 10 s.
+- The server closes a connection that sends nothing (no audio, no ping) for 45 s. After reconnecting, the phone sends `hello`, then `pause` again if the wearer had paused.
 
 ### 2. Speech module (B builds, C hosts)
 
@@ -56,12 +57,13 @@ File `server/speech/index.ts`. One module per phone session.
 export type Utterance = {
   id: string
   text: string
-  startMs: number   // from session start
+  startMs: number   // ms from the session's first audio byte, counting every byte passed to pushAudio
   endMs: number
   rmsDb: number
   speaker: string | null   // provider label; null with ElevenLabs
   name: string | null      // family name if known
-  isWearer: boolean
+  role: 'wearer' | 'other' | 'unknown'   // B decides; unknown/overlapping speech is never a question or answer
+  isWearer: boolean        // same as role === 'wearer'
 }
 
 export type QAPair = { question: Utterance; answer: Utterance }
@@ -83,17 +85,17 @@ export function createSpeechModule(opts: {
 }): SpeechModule
 ```
 
-**Rules:** `onWearerQuestion` fires before the answer arrives so C can match immediately. Only wearer questions and non-wearer answers form pairs. `fake` replays scripted lines from a text file on a timer.
+**Rules:** `onWearerQuestion` fires before the answer arrives so C can match immediately. Only `role: 'wearer'` questions and `role: 'other'` answers form pairs. Call `onPair` for **every** `other` utterance within 30 s of the question, not just the first: C checks them in spoken order, saves the earliest one that actually replies to the question and ignores the rest. A new wearer question closes the previous window, so report candidates in the order they were spoken. The server cuts tone audio from its own buffer by `startMs`/`endMs`, so if you skip silent chunks, keep counting their bytes. `fake` replays scripted lines from a text file on a timer.
 
 ### 3. Transcription service (B, external)
 
-**Deepgram:** connect to `wss://api.deepgram.com/v1/listen` with `model=nova-3`, `encoding=linear16`, `sample_rate=16000`, `channels=1`, `diarize=true`, `interim_results=true`, `endpointing=300` (a starting value to tune), and the header `Authorization: Token <key>`. Send 20 to 100 ms per message, which is 640 to 3,200 bytes at this format. Use results marked final.
+**Deepgram:** connect to `wss://api.deepgram.com/v1/listen` with `model=nova-3`, `encoding=linear16`, `sample_rate=16000`, `channels=1`, `diarize=true`, `punctuate=true` (off by default; question detection needs the "?"), `interim_results=true`, `endpointing=300` (a starting value to tune), and the header `Authorization: Token <key>`. Send 20 to 100 ms per message, which is 640 to 3,200 bytes at this format. Use results marked final, joining `is_final` pieces until `speech_final` (or `UtteranceEnd`): one sentence can arrive in several pieces.
 
 **ElevenLabs:** Scribe v2 Realtime through `@elevenlabs/elevenlabs-js` (`speechToText.realtime.connect`). Set 16 kHz PCM input and chunk size from their realtime streaming guide.
 
 ### 4. Server endpoints for Creao (D calls, C hosts)
 
-All three use `Authorization: Bearer <FACTS_SECRET>`.
+`/facts` and `/qa/today` use `Authorization: Bearer <FACTS_SECRET>`. Creao can't set that header, so the webhook carries a separate secret in its URL: `POST /creao/webhook?s=<WEBHOOK_SECRET>` (`webhookUrl()` in `server/src/config.ts` builds it).
 
 **`POST /facts`** adds or replaces facts by `id`:
 
@@ -101,9 +103,11 @@ All three use `Authorization: Bearer <FACTS_SECRET>`.
 {"v":1,"facts":[{"id":"fact_3","question":"Where is Mary?","answer":"Mary is at the store, back by 3.","answeredBy":"Sarah","standing":false,"remindAt":null}]}
 ```
 
-Returns `200 {"stored":1}`, `400` for a bad body, `401` for a bad secret. For a reminder (stretch), set `remindAt` to an ISO time and `question` to null. **`DELETE /facts/:id`** removes one.
+Returns `200 {"stored":1}`, `400` for a bad body, `401` for a bad secret. Facts without `standing: true` expire at the wearer's midnight, so re-post them each day. For a reminder (stretch), set `remindAt` to an ISO time and `question` to null. **`DELETE /facts/:id`** removes one.
 
 **`GET /qa/today`** returns `{"v":1,"pairs":[ ...Q&A records ]}` for the dashboard.
+
+`POST /facts`, `DELETE /facts/:id` and `GET /qa/today` stay at these root URLs in C's `index.ts`. D's router is mounted with `app.use('/creao', ...)` and serves only `/creao/webhook`; mounting `/facts` there would change its URL to `/creao/facts`.
 
 **`POST /creao/webhook`** receives whatever Creao sends when a run finishes. It replies `200` at once and processes afterwards. It only accepts run IDs the server started; the server keeps a map of run ID to kind (`log`, `summary`, `facts`, `patterns`) to route each result.
 
@@ -112,13 +116,14 @@ Returns `200 {"stored":1}`, `400` for a bad body, `401` for a bad secret. For a 
 File `server/creao/index.ts`. Nothing here is ever awaited in the live path.
 
 ```typescript
-export async function submitClip(wav: Buffer, range: { fromIso: string; toIso: string }): Promise<string> // run ID
+export async function submitLog(batch: { fromIso: string; toIso: string; transcript: unknown[]; pairs: unknown[]; events: unknown[]; tones: unknown[] }): Promise<string> // run ID
+export async function submitClip(wav: Buffer, range: { fromIso: string; toIso: string }): Promise<string> // optional, unused by default
 export async function runSummary(dateIso: string): Promise<string>
 export async function runPatterns(dateIso: string): Promise<string>
 export async function handleWebhook(body: unknown): Promise<void>
 ```
 
-C buffers the session's audio and calls `submitClip` every 5 minutes with a 16 kHz mono WAV.
+Every 5 minutes C calls `submitLog` with the new transcript lines, Q&A pairs, question events and tone records (spec v4.1 section 8; the window ends 15 s ago so in-flight tone results aren't missed). C's server also starts `runSummary` at 20:00 and `runPatterns` at 23:30 local time (`SUMMARY_AT`, `PATTERNS_AT`), once per day. For D's router, `creaoStore` in `server/src/facts.ts` implements `CreaoStore` and `runRegistry` in `server/src/store.ts` implements `RunKindRegistry`.
 
 ### 6. Creao API (D, external; confirm at the Creao table)
 
@@ -201,7 +206,7 @@ Docs: [Device APIs](https://hub.evenrealities.com/docs/build/device-apis) · [LA
 
 You build the server's speech module: it turns the audio stream into sentences, decides who said each one, and saves question-and-answer pairs. It lives in C's server, as its own file.
 
-**You receive:** binary audio frames from the phone (16 kHz, 16-bit, mono). **You produce:** Q&A records in the store (see API contracts 1 and 2), and each new wearer question handed to C's matcher.
+**You receive:** binary audio frames from the phone (16 kHz, 16-bit, mono). **You produce:** utterances, wearer questions and Q&A pairs through the speech module's callbacks (API contract 2); C's server matches the questions and saves the pairs.
 
 **Steps**
 
@@ -214,13 +219,13 @@ You build the server's speech module: it turns the audio stream into sentences, 
 4. **Utterances (by 11 PM).** Turn every finished sentence into one object, keeping the RMS of the audio it covers:
 
 ```json
-{"text":"What time is lunch?","start":12.4,"end":13.6,"rms_db":-18.2,"speaker":"0","isWearer":true}
+{"id":"utt_3","text":"What time is lunch?","startMs":12400,"endMs":13600,"rmsDb":-18.2,"speaker":"0","name":null,"role":"wearer","isWearer":true}
 ```
 
 5. **Wearer vs. others (by 11 PM).**
-   - ElevenLabs: `isWearer` = RMS above the threshold from your test.
+   - ElevenLabs: `role` = `wearer` when RMS is above the threshold from your test, `other` when clearly below, `unknown` in between or when voices overlap.
    - Deepgram: at setup the wearer says one sentence; that speaker label is the wearer. Loudness breaks ties. Family members each say a sentence too, so their labels map to names.
-6. **Q&A capture (by Sun 1 AM).** A wearer sentence ending in "?" or starting with a question word is a question. Hand it to C's matcher right away. The next sentence from someone else within 30 seconds is its answer; save the pair.
+6. **Q&A capture (by Sun 1 AM).** A wearer sentence ending in "?" or starting with a question word is a question. Hand it to C's matcher right away. Every `other` sentence within 30 seconds is a candidate answer: emit each with `onPair`, in the order spoken. C's server saves the earliest one that really replies to the question. A new wearer question closes the previous window.
 7. **Skip silence (by Sun 3 AM).** Don't forward chunks below a quiet threshold. It saves cost and cuts noise.
 8. **Measure (by Sun 6 AM).** Time from the end of the question to the line on the glasses. Target 2 seconds or less. The biggest share is the service waiting to be sure the sentence ended; shorten that setting if it's slow.
 9. **Noise test (by Sun 8 AM).** Three people talking, one wearer asking. Fix whatever breaks.

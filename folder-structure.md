@@ -3,9 +3,10 @@
 ```
 asked-answered/
 |-- README.md
-|-- MVP_IMPLEMENTATION_SPEC.md        # spec v4.1
+|-- MVP_IMPLEMENTATION_SPEC.md        # spec v4.2
 |-- folder-structure.md               # this file
 |-- docker-compose.yml                # runs server + tone-service together
+|-- .env.example                      # copy to .env: TONE_SECRET, tone settings, host ports for compose
 |-- .gitignore
 |
 |-- glasses-app/                      # A: Even Hub app (runs on the phone, not in Docker)
@@ -33,7 +34,8 @@ asked-answered/
 |   |   |-- types.ts                  # contract shapes shared by everyone
 |   |   |-- session.ts                # one phone connection, audio buffer, questions
 |   |   |-- matcher.ts                # embeddings + yes/no double-check
-|   |   |-- store.ts                  # Q&A, facts, transcript, questions, tone, settings
+|   |   |-- store.ts                  # Q&A, facts, transcript, questions, tone, settings, Creao results
+|   |   |-- facts.ts                  # fact validation + saving; creaoStore for D's router
 |   |   |-- wav.ts                    # WAV header + 60-second audio buffer
 |   |   |-- speech/                   # B: speech module
 |   |   |   |-- index.ts              # createSpeechModule() + fake provider

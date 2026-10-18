@@ -1,0 +1,12 @@
+# Pinned to the versions verified in the Docker build on 2026-10-17 (model loads, /tone scores speech).
+# torch/torchaudio are installed first from the CPU index in the Dockerfile; keep these pins in sync with it.
+fastapi==0.143.3
+uvicorn==0.54.0
+soundfile==0.14.0
+numpy==2.4.6
+funasr==1.4.16
+torch==2.14.1
+torchaudio==2.11.0
+modelscope==1.40.2
+huggingface_hub==2.2.0
+hf-xet==1.7.0
