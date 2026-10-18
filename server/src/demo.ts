@@ -18,11 +18,12 @@ const SPAN_MIN = 300 // the fixture's oldest offset
 type Ask = { id: string; ago: number; question: string; worry: number | null; link?: Partial<QuestionEvent>; reply?: { name: string; text: string } }
 
 const ASKS: Ask[] = [
-  // Lunch: answered aloud as noon, then shown from that answer; Sarah's note later says 1pm, so the last ask shows nothing.
+  // Lunch: answered aloud as noon, then shown from that answer each time. Sarah's note agrees (noon), so a live "noon" in the
+  // demo isn't a contradiction and the glasses answer it.
   { id: 'lunch1', ago: 280, question: 'What time is lunch?', worry: 0.12, link: { answerRecordId: 'demo_qa_lunch' }, reply: { name: 'Tom', text: 'Lunch is at noon.' } },
   { id: 'lunch2', ago: 210, question: 'When do we eat?', worry: 0.2, link: { matchedRecordId: 'demo_qa_lunch', matchScore: 0.91 } },
   { id: 'lunch3', ago: 130, question: 'What time is lunch?', worry: 0.38, link: { matchedRecordId: 'demo_qa_lunch', matchScore: 0.97 } },
-  { id: 'lunch4', ago: 30, question: 'Is it lunch time yet?', worry: 0.58, link: { contradiction: { spokenRecordId: 'demo_qa_lunch', factRecordId: 'demo_fact_lunch' } } },
+  { id: 'lunch4', ago: 30, question: 'Is it lunch time yet?', worry: 0.58, link: { matchedRecordId: 'demo_qa_lunch', matchScore: 0.93 } },
   // Mary: shown from the family note every time.
   { id: 'mary1', ago: 250, question: 'Where is Mary?', worry: 0.1, link: { matchedRecordId: 'demo_fact_mary', matchScore: 0.98 } },
   { id: 'mary2', ago: 160, question: 'Where’s Mary gone?', worry: 0.15, link: { matchedRecordId: 'demo_fact_mary', matchScore: 0.9 } },
@@ -58,7 +59,7 @@ export function seedDemo(now = new Date()) {
     record({ id: 'demo_fact_mary', question: 'Where is Mary?', answer: 'Mary is at the store, back by 3.' }, 300),
     record({ id: 'demo_fact_home', question: 'Where do I live?', answer: 'You live at 12 Oak Street with your daughter Sarah.', standing: true }, 300),
     record({ id: 'demo_fact_sarah', question: 'Who is Sarah?', answer: 'Sarah is your daughter.', standing: true }, 300),
-    record({ id: 'demo_fact_lunch', question: 'What time is lunch?', answer: 'Lunch is at 1pm.' }, 60),
+    record({ id: 'demo_fact_lunch', question: 'What time is lunch?', answer: 'Lunch is at noon.' }, 60),
     record({ id: 'demo_reminder_pills', answer: 'Time to take your pills.', remindAt: at(120), reminderStatus: 'sent', reminderDoneAt: at(120) }, 300),
     record({ id: 'demo_qa_lunch', question: 'What time is lunch?', answer: 'Lunch is at noon.', answeredBy: 'Tom', source: 'spoken' }, 280),
   ]
@@ -89,7 +90,7 @@ export function seedDemo(now = new Date()) {
     store.saveSummary(date, {
       date, demo: true, generatedAt: at(15),
       summary: 'A mostly calm morning for Rose. She asked about lunch four times and sounded more worried each time: Tom ' +
-        'said noon, but Sarah’s note says 1pm, so the glasses stopped answering. Worth fixing the note. Mary was asked about three ' +
+        'answered noon and the glasses repeated it each time. Mary was asked about three ' +
         'times and the glasses answered from the family note each time. The pills reminder was delivered.',
     })
   }
