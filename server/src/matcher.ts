@@ -124,7 +124,36 @@ export async function isReply(question: string, answer: string): Promise<boolean
   }
 }
 
-async function askYesNo(prompt: string): Promise<boolean> {
+/** One yes/no check, by VERIFY_PROVIDER. Anything but a clear "yes" (or any error) counts as no. */
+export async function askYesNo(prompt: string): Promise<boolean> {
+  return config.verifyProvider === 'stepfun' ? stepfunYesNo(prompt) : geminiYesNo(prompt)
+}
+
+let lastEmptyWarnAt = 0
+
+async function stepfunYesNo(prompt: string): Promise<boolean> {
+  if (!config.stepfunApiKey || !config.stepfunModel) throw new Error('StepFun selected but STEPFUN_API_KEY or STEPFUN_MODEL is missing')
+  const res = await fetch(`${config.stepfunBaseUrl.replace(/\/$/, '')}/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${config.stepfunApiKey}` },
+    // 32, not 5: a reasoning model's thinking can count against max_tokens and leave no room for "yes".
+    body: JSON.stringify({ model: config.stepfunModel, messages: [{ role: 'user', content: prompt }], temperature: 0, max_tokens: 32 }),
+    signal: AbortSignal.timeout(1500),
+  })
+  if (!res.ok) throw new Error(`stepfun verify ${res.status}: ${(await res.text()).slice(0, 200)}`)
+  const json = (await res.json()) as { choices?: { message?: { content?: string }; finish_reason?: string }[] }
+  const choice = json.choices?.[0]
+  // Some reasoning models think inline: drop <think>…</think>, and an unclosed <think>… cut off by max_tokens.
+  const text = (choice?.message?.content ?? '').replace(/<think>[\s\S]*?(<\/think>|$)/gi, '')
+  if (!text.trim() && Date.now() - lastEmptyWarnAt > 60_000) {
+    // Counts as "no" either way; say why, so it doesn't look like "nothing matches".
+    lastEmptyWarnAt = Date.now()
+    console.warn(`[matcher] StepFun returned no text (finish_reason=${choice?.finish_reason ?? '?'}); pick a non-reasoning STEPFUN_MODEL`)
+  }
+  return /^\s*yes/i.test(text)
+}
+
+async function geminiYesNo(prompt: string): Promise<boolean> {
   const res = await fetch(`${GEMINI}/${config.verifyModel}:generateContent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': config.geminiApiKey },
