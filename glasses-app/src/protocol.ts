@@ -14,6 +14,8 @@ export type ClientMessage =
   // Applies to the audio frames that follow; sent when it changes. The server
   // uses it to tell the wearer's speech from other people's.
   | { v: 1; type: 'role'; role: SpeakerRole }
+  // The phone's position, for "Where am I?". Sent when it changes and after each reconnect.
+  | { v: 1; type: 'location'; latitude: number; longitude: number; accuracy: number | null; at: string }
 
 export type Answer = {
   v: 1
@@ -25,11 +27,18 @@ export type Answer = {
   speaker: string | null
   /** Already formatted in the wearer's time zone, e.g. "10:40 AM". */
   at: string
-  source: 'spoken' | 'family'
+  /** Set when the answer wasn't given today: "yesterday" or "on Friday". */
+  day?: string
+  /** location: built from the phone's GPS and map data when the wearer asks where they are. */
+  source: 'spoken' | 'family' | 'location'
 }
+
+/** A remembered person is talking to the wearer now, recognized by voice. */
+export type Speaker = { v: 1; type: 'speaker'; name: string; score: number }
 
 export type ServerMessage =
   | Answer
+  | Speaker
   | { v: 1; type: 'clear' }
   | { v: 1; type: 'status'; text: string }
   | { v: 1; type: 'pong' }
@@ -48,6 +57,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
   switch (fields.type) {
     case 'answer':
       return typeof fields.text === 'string' && typeof fields.at === 'string' ? (msg as Answer) : null
+    case 'speaker':
+      return typeof fields.name === 'string' && fields.name.trim() ? (msg as Speaker) : null
     case 'status':
       return typeof fields.text === 'string' ? (msg as ServerMessage) : null
     case 'error':

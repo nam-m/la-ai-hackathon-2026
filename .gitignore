@@ -11,3 +11,6 @@ dist/
 .venv/
 __pycache__/
 .vite/
+
+# voice-service models (130 MB, downloaded on first start)
+voice-service/models/

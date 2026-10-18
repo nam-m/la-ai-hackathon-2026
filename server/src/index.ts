@@ -6,6 +6,8 @@ import * as store from './store.js'
 import * as matcher from './matcher.js'
 import * as creao from './creao/index.js'
 import * as emotion from './emotion/index.js'
+import * as voices from './voices/client.js'
+import { voiceRoutes } from './voices/routes.js'
 import * as demo from './demo.js'
 import { factProblem, saveFacts } from './facts.js'
 import { Session, sessions, answerMessage, formatTime } from './session.js'
@@ -45,9 +47,12 @@ app.get('/health', (_req, res) => {
   res.json({
     ok: true, sessions: sessions.size, paused: [...sessions].filter(s => s.isPaused).length, records: store.allRecords().length,
     matcher: matcherName, verify: verifierName, speech: config.speechProvider,
-    tone: emotion.toneStatus(),
+    tone: emotion.toneStatus(), voice: voices.voiceStatus(),
   })
 })
+
+// Voice recognition dashboard for the PC: open /voices#key=<FACTS_SECRET>.
+app.use(voiceRoutes(requireSecret))
 
 // Contract 4: POST /facts — adds or replaces facts by id, stored word for word.
 app.post('/facts', requireSecret, (req, res) => {
@@ -251,7 +256,7 @@ setInterval(() => {
       console.log(`[reminder] missed ${r.id} (due ${r.remindAt})`)
       continue
     }
-    const msg = { ...answerMessage(r), at: formatTime(r.remindAt) }
+    const msg = { ...answerMessage(r), at: formatTime(r.remindAt), day: undefined }
     let delivered = 0
     for (const s of sessions) if (!s.isPaused && s.send(msg)) delivered++
     if (!delivered) continue
@@ -312,6 +317,7 @@ setInterval(() => {
 // Health-check the tone service every 30 s while tone is on: /health must show an outage and a recovery
 // (and the first start's model download) without waiting for the next question.
 setInterval(() => { if (emotion.toneEnabled()) void emotion.probe() }, 30_000)
+setInterval(() => { if (voices.voiceEnabled()) void voices.probe() }, 30_000)
 
 // docker stop / Ctrl-C: save the store and exit instead of being killed mid-write.
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {
@@ -334,6 +340,8 @@ server.listen(config.port, () => {
     console.warn('[server] WARNING: VERIFY_PROVIDER=stepfun but STEPFUN_API_KEY or STEPFUN_MODEL is missing; every yes/no check will fail, so nothing will be answered.')
   console.log(`[server] tone=${config.toneUrl || 'not configured (set TONE_URL)'}`)
   void emotion.probe()
+  console.log(`[server] voice=${config.voiceUrl || 'not configured (set VOICE_URL)'}${config.voiceUrl ? `  dashboard: ${config.publicUrl}/voices#key=<FACTS_SECRET>` : ''}`)
+  void voices.probe()
   scheduleTick()
   if (matcherName === 'local') console.warn('[server] WARNING: no GEMINI_API_KEY or ANTHROPIC_API_KEY. The local matcher is for testing plumbing only and makes wrong matches. Never demo without the key.')
 })

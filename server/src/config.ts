@@ -55,6 +55,11 @@ export const config = {
   dataFile: env('DATA_FILE', './data/store.json'),
   toneUrl: env('TONE_URL'), // empty = tone analysis off
   toneSecret: env('TONE_SECRET', 'change-me-tone'),
+  // Reverse geocoding for "Where am I?" (OpenStreetMap; free, one request per second).
+  nominatimUrl: env('NOMINATIM_URL', 'https://nominatim.openstreetmap.org'),
+  voiceUrl: env('VOICE_URL'), // voice-service/; empty = voice recognition off
+  voiceSecret: env('VOICE_SECRET'),
+  voiceThreshold: Number(env('VOICE_THRESHOLD', '0.47')), // fused cosine; the prototype's benchmark optimum
   // Server-driven Creao runs, wearer's local time, HH:MM.
   summaryAt: hhmm('SUMMARY_AT', '20:00'),
   patternsAt: hhmm('PATTERNS_AT', '23:30'),

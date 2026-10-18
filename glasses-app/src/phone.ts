@@ -1,6 +1,7 @@
 import type { MicState } from './audio'
 import { answerMeta, SEE_PHONE_TEXT, type GlassesView } from './display'
-import type { Answer } from './protocol'
+import type { Fix } from './location'
+import type { Answer, Speaker } from './protocol'
 import type { SocketState } from './socket'
 
 type Actions = {
@@ -68,6 +69,8 @@ export function mountPhone(actions: Actions) {
         <dl class="readings">
           <dt>Level</dt><dd id="db">--</dd>
           <dt>Speaker role</dt><dd id="role">--</dd>
+          <dt>Voice</dt><dd id="voice">--</dd>
+          <dt>Location</dt><dd id="location">--</dd>
           <dt>Last 2 s</dt><dd id="roles">--</dd>
           <dt>Direction</dt><dd id="direction">--</dd>
           <dt>Sent</dt><dd id="rate">0.0 kB/s</dd>
@@ -96,6 +99,8 @@ export function mountPhone(actions: Actions) {
   const db = el('db')
   const role = el('role')
   const roles = el('roles')
+  const voice = el('voice')
+  const location = el('location')
   const direction = el('direction')
   const rate = el('rate')
 
@@ -151,6 +156,15 @@ export function mountPhone(actions: Actions) {
       role.textContent = speakerRole
       roles.textContent = Object.entries(counts).map(([name, n]) => `${name} ${n}`).join(' · ')
       direction.textContent = dir === null ? 'n/a' : String(dir)
+    },
+    /** Where the phone is, as sent to the server for "Where am I?". */
+    setLocation(fix: Fix, source: 'gps' | 'fake') {
+      const time = new Date(fix.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+      location.textContent = `${fix.latitude.toFixed(5)}, ${fix.longitude.toFixed(5)}${fix.accuracy === null ? '' : ` ±${fix.accuracy} m`} (${time}${source === 'fake' ? ', fake' : ''})`
+    },
+    /** The last remembered person the server recognized by voice. */
+    setSpeaker(speaker: Speaker) {
+      voice.textContent = `${speaker.name} (${speaker.score.toFixed(2)}, ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })})`
     },
     setRate(kbPerSecond: number) {
       rate.textContent = `${kbPerSecond.toFixed(1)} kB/s`

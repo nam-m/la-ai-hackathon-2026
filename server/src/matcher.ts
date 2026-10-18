@@ -1,5 +1,6 @@
 import { config } from './config.js'
 import * as store from './store.js'
+import { dayOf, localDay } from './when.js'
 import type { QARecord } from './types.js'
 
 /**
@@ -142,7 +143,7 @@ export async function askYesNo(prompt: string): Promise<boolean> {
 // answered by then, a second identical call goes out and the first reply wins.
 const CLAUDE_HEDGE_AFTER_MS = 700
 
-async function claudeText(prompt: string, maxTokens: number, timeoutMs: number): Promise<string> {
+export async function claudeText(prompt: string, maxTokens: number, timeoutMs: number): Promise<string> {
   if (!config.anthropicApiKey) throw new Error('Claude selected but ANTHROPIC_API_KEY is missing')
   const done = new AbortController()
   const signal = AbortSignal.any([done.signal, AbortSignal.timeout(timeoutMs)])
@@ -188,16 +189,19 @@ async function claudePick(question: string, records: QARecord[]): Promise<Set<st
   const text = await claudeText(
     'A person just asked a new question. Below are questions asked earlier today. ' +
     'Which earlier questions ask for exactly the same information, so that the earlier answer is a correct answer to the new question? ' +
-    'Different wording counts as the same ("Where are my keys?" and "Have you seen my keys?"; "What is for breakfast?" and "What are we eating this morning?"). ' +
-    'They are NOT the same if they ask about a different person or thing (my vs your, Mary vs Sarah, dog vs cat), ' +
-    'a different kind of information (when vs where, a time vs a name), or a different day. ' +
+    'Different wording counts as the same ("Where are my keys?" and "Have you seen my keys?"; "What is for breakfast?" and "What are we eating this morning?"; "When is dinner?" and "When do we eat tonight?"). ' +
+    // Without the events, Haiku took "When is the dinner?" for "What time is lunch?" and "What time are we going to the park?"
+    // when they were stored together (live, 2026-10-18); the when/where example keeps that rule from weakening.
+    'They are NOT the same if any of these differ: the event, person or thing asked about (dinner, lunch and a trip to the park are different events; ' +
+    'my vs your; Mary vs Sarah); the kind of information (when vs where: "When is lunch?" and "Where is lunch?" are NOT the same; a time vs a name); or the day. ' +
     'Reply with only their numbers separated by commas, or "none".\n' +
     `New question: ${oneLine(question)}\nEarlier questions:\n${list}`,
     30,
     1800,
   )
   const picked = new Set<string>()
-  if (/^\s*none/i.test(text)) return picked
+  // Only a bare list counts: digits inside a sentence of reasoning would be false picks, and a wrong answer is worse than none.
+  if (!/^\s*\d+(\s*,\s*\d+)*\s*\.?\s*$/.test(text)) return picked
   for (const m of text.matchAll(/\d+/g)) {
     const r = records[Number(m[0]) - 1]
     if (r) picked.add(r.id)
@@ -267,7 +271,10 @@ export async function findMatch(question: string): Promise<{ match: MatchResult 
 }
 
 async function decide(question: string, log: MatchLog): Promise<MatchResult | null> {
-  const records = store.answerable().filter(r => !r.remindAt)
+  // Only answers about the day asked about: "When is dinner?" today must not get tomorrow's dinner, and
+  // "When is dinner tomorrow?" must not get today's. Standing facts hold every day.
+  const askedDay = dayOf(question) ?? localDay()
+  const records = store.answerable().filter(r => !r.remindAt && (r.standing || (r.forDate ?? store.localDate(r.answeredAt)) === askedDay))
   if (!records.length) return null
 
   let scored: MatchResult[]

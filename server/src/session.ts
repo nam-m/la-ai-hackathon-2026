@@ -6,6 +6,13 @@ import * as emotion from './emotion/index.js'
 import { createSpeechModule, type QAPair, type SpeechModule, type SpeechOptions, type Utterance } from './speech/index.js'
 import { PcmRing } from './wav.js'
 import { RoleTimeline, isGlassesRole } from './glasses-role.js'
+import { reverseGeocode, type Place } from './location/geocode.js'
+import { distanceM, isHome, isWhereAmI, locationText, type Fix } from './location/index.js'
+import { findUpdate, mightUpdate } from './updates.js'
+import { dayLabel, dayOf } from './when.js'
+import * as voiceClient from './voices/client.js'
+import { extractName } from './voices/names.js'
+import { VoiceTracker } from './voices/tracker.js'
 import type { PhoneMessage, QARecord, ServerMessage } from './types.js'
 
 export const sessions = new Set<Session>()
@@ -17,18 +24,29 @@ export type SessionDependencies = {
   isReply: typeof matcher.isReply
   warm: typeof matcher.warm
   analyzeQuestion: typeof emotion.analyzeQuestion
+  /** Voice recognition (voices/); off unless VOICE_URL is set or a test passes these. */
+  embedVoice?: typeof voiceClient.embed
+  extractName?: typeof extractName
+  /** Coordinates -> place for "Where am I?" (OpenStreetMap by default). */
+  geocode?: typeof reverseGeocode
+  /** Which stored answer a line nobody asked for updates (Claude by default). */
+  findUpdate?: typeof findUpdate
 }
 const defaultDependencies: SessionDependencies = {
   createSpeech: createSpeechModule, findMatch: matcher.findMatch, isReply: matcher.isReply,
   warm: matcher.warm, analyzeQuestion: emotion.analyzeQuestion,
 }
 
+/** How long a spoken pair waits for the answerer's voice check, so the glasses can say "Kevin · 10:40 AM". */
+const ANSWERER_WAIT_MS = 1500
+
 export function formatTime(iso: string) {
   return new Intl.DateTimeFormat('en-US', { timeZone: config.timezone, hour: 'numeric', minute: '2-digit' }).format(new Date(iso))
 }
 
 export function answerMessage(r: QARecord): ServerMessage {
-  return { v: 1, type: 'answer', id: r.id, text: r.answer, speaker: r.answeredBy, at: formatTime(r.answeredAt), source: r.source }
+  const day = dayLabel(r.answeredAt) // "yesterday", "on Friday": an answer from before today says so
+  return { v: 1, type: 'answer', id: r.id, text: r.answer, speaker: r.answeredBy, at: formatTime(r.answeredAt), ...(day ? { day } : {}), source: r.source }
 }
 
 /** One connected phone. */
@@ -49,9 +67,26 @@ export class Session {
   private generation = 0
   private closed = false
   private speechUnavailable = false
+  /** Who is talking to the wearer, by voice; null when voice recognition is off. */
+  private voices: VoiceTracker | null = null
+  /** Where the phone last was, and the place there once looked up. */
+  private fix: Fix | null = null
+  private place: Place | null = null
+  private placeLookup: Promise<Place | null> | null = null
+  /** Other-person lines that went to the pair check; the rest are checked as updates nobody asked for. */
+  private pairCandidates = new Set<string>()
 
   constructor(private ws: WebSocket, private readonly dependencies: SessionDependencies = defaultDependencies) {
     sessions.add(this)
+    if (dependencies.embedVoice || voiceClient.voiceEnabled()) {
+      this.voices = new VoiceTracker({
+        session: () => this.name,
+        embed: dependencies.embedVoice ?? voiceClient.embed,
+        extractName: dependencies.extractName ?? extractName,
+        clip: (startMs, endMs) => this.ring.get(startMs, endMs),
+        send: msg => { if (!this.closed && !this.paused) this.send(msg) },
+      })
+    }
     ws.on('message', (data, isBinary) => {
       this.lastHeard = Date.now()
       return isBinary ? this.onAudio(data as Buffer) : this.onJson(data.toString())
@@ -117,6 +152,9 @@ export class Session {
         // The glasses' speakerRole for the audio frames that follow (sent only when it changes).
         if (isGlassesRole(msg.role)) this.roles.set(msg.role)
         break
+      case 'location':
+        this.onLocation(msg)
+        break
     }
   }
 
@@ -172,7 +210,59 @@ export class Session {
   private onUtterance(u: Utterance) {
     if (this.closed || this.paused) return
     console.log(`[speech ${this.name}] ${u.role === 'wearer' ? 'WEARER' : u.role === 'unknown' ? '?' : (u.name ?? u.speaker ?? 'other')}: ${u.text}`)
-    store.addTranscript({ id: u.id + '_' + Date.now().toString(36), at: new Date().toISOString(), role: u.role, name: u.role === 'other' ? u.name : null, text: u.text })
+    const id = u.id + '_' + Date.now().toString(36)
+    store.addTranscript({ id, at: new Date().toISOString(), role: u.role, name: u.role === 'other' ? u.name : null, text: u.text })
+    this.voices?.onUtterance(u, id)
+    // onPair, if this line is a candidate reply, comes right after; a line that isn't one may be an update.
+    if (u.role === 'other') setImmediate(() => { if (!this.pairCandidates.delete(u.id)) void this.checkUpdate(u) })
+  }
+
+  private onLocation(msg: Extract<PhoneMessage, { type: 'location' }>) {
+    const { latitude: lat, longitude: lon } = msg
+    if (typeof lat !== 'number' || typeof lon !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return
+    const at = typeof msg.at === 'string' && !Number.isNaN(Date.parse(msg.at)) ? msg.at : new Date().toISOString()
+    const accuracy = typeof msg.accuracy === 'number' && Number.isFinite(msg.accuracy) ? Math.round(msg.accuracy) : null
+    const moved = !this.fix || distanceM(this.fix, { lat, lon }) > 20
+    this.fix = { lat, lon, accuracy, at }
+    if (moved) this.place = null
+    if (!this.place) this.lookUpPlace() // now, so "Where am I?" is answered at once; again if the last lookup failed
+  }
+
+  private lookUpPlace() {
+    const fix = this.fix!
+    const lookup = (this.dependencies.geocode ?? reverseGeocode)(fix.lat, fix.lon)
+    this.placeLookup = lookup
+    void lookup.then(place => {
+      if (this.placeLookup !== lookup) return
+      this.place = place
+      console.log(`[location ${this.name}] ${fix.lat.toFixed(5)},${fix.lon.toFixed(5)}${fix.accuracy === null ? '' : ` ±${fix.accuracy} m`}: ${place?.area ?? place?.street ?? place?.city ?? 'no address'}`)
+    })
+    return lookup
+  }
+
+  /** For the debug dashboard. */
+  locationSnapshot() {
+    const home = store.getSettings().home ?? null
+    return {
+      session: this.name,
+      fix: this.fix,
+      place: this.place,
+      atHome: this.fix && home ? isHome(this.fix, home) : null,
+      fromHomeM: this.fix && home ? Math.round(distanceM(this.fix, home)) : null,
+      answer: this.fix ? locationText(this.fix, this.place, home) : null,
+    }
+  }
+
+  /** "You're at 308 Westwood Plaza, 0.4 miles from home.", or null without a fix or an address. */
+  private async locationAnswer(): Promise<ServerMessage | null> {
+    const fix = this.fix
+    if (!fix) return null
+    // A lookup still running gets a moment, and a failed one another try; the answer is built from map data, never by a model.
+    const within = (p: Promise<Place | null>, ms: number) => Promise.race([p, new Promise<null>(done => setTimeout(() => done(null), ms).unref())])
+    let place = this.place ?? (this.placeLookup ? await within(this.placeLookup, 1500) : null)
+    if (!place && this.fix === fix) place = await within(this.lookUpPlace(), 2500)
+    const text = locationText(fix, place, store.getSettings().home ?? null)
+    return text ? { v: 1, type: 'answer', id: store.newId('loc'), text, speaker: null, at: formatTime(fix.at), source: 'location' } : null
   }
 
   private async onQuestion(q: Utterance) {
@@ -186,6 +276,19 @@ export class Session {
 
     // Tone runs beside matching and is never awaited here.
     void this.dependencies.analyzeQuestion(eventId, this.ring.get(q.startMs, q.endMs)).catch(() => undefined)
+
+    // "Where am I?" is answered from the phone's GPS, not from what anyone said.
+    if (isWhereAmI(q.text)) {
+      const answer = await this.locationAnswer()
+      if (!this.isCurrent(q.id, generation)) return
+      if (answer && this.send(answer)) {
+        store.updateEvent(eventId, { matchedRecordId: 'location' })
+        console.log(`[location ${this.name}] where am I -> ${answer.type === 'answer' ? answer.text : ''}`)
+      } else {
+        console.log(`[location ${this.name}] where am I, but ${this.fix ? 'no address for' : 'no location from'} the phone`)
+      }
+      return
+    }
 
     const { match, log } = await this.dependencies.findMatch(q.text)
     if (!this.isCurrent(q.id, generation)) return
@@ -212,9 +315,10 @@ export class Session {
     const generation = this.generation
     if (!this.isCurrent(qid, generation)) return
     const answeredAt = Date.now()
+    this.pairCandidates.add(p.answer.id)
     const previous = this.pairChecks.get(qid) ?? Promise.resolve(false)
-    // Chain per question so two candidates checked at once can't both be saved.
-    const next = previous.then(saved => saved || this.tryPair(p, generation, answeredAt)).catch(() => false)
+    // Chain per question so two candidates checked at once can't both be saved. Once one is, later ones may still be updates.
+    const next = previous.then(saved => saved ? (void this.checkUpdate(p.answer), true) : this.tryPair(p, generation, answeredAt)).catch(() => false)
     this.pairChecks.set(qid, next)
     if (this.pairChecks.size > 50) this.pairChecks.delete(this.pairChecks.keys().next().value!) // old windows are long closed
   }
@@ -230,30 +334,72 @@ export class Session {
     if (!this.isCurrent(p.question.id, generation)) return false
     if (!replies) {
       console.log(`[store ${this.name}] not a reply, window stays open: "${p.question.text}" -> "${p.answer.text}"`)
+      void this.checkUpdate(p.answer)
       return false
     }
+    // Speech gives no names with ElevenLabs; the answerer's remembered voice may.
+    const voice = p.answer.name ? null : await this.voices?.voiceFor(p.answer.id, ANSWERER_WAIT_MS)
+    const answeredBy = p.answer.name ?? voice?.name ?? null
+    if (!this.isCurrent(p.question.id, generation)) return false
     const record: QARecord = {
       id: store.newId('qa'),
       question: p.question.text,
       answer: p.answer.text,
       askedAt: new Date(answeredAt - (p.answer.endMs - p.question.endMs)).toISOString(),
       answeredAt: new Date(answeredAt).toISOString(),
-      answeredBy: p.answer.name,
+      answeredBy,
       source: 'spoken',
       standing: false,
     }
+    // "Dinner tomorrow is at 7": shown for tomorrow's dinner, through tomorrow, not for today's.
+    const forDate = dayOf(p.answer.text) ?? dayOf(p.question.text)
+    if (forDate) record.forDate = forDate
     store.upsert(record)
+    // Their name may come later ("Thanks, Sarah"); then this answer says who gave it too.
+    if (!answeredBy) this.voices?.whenNamed(p.answer.id, name => {
+      const saved = store.get(record.id)
+      if (saved && !saved.answeredBy) store.upsert({ ...saved, answeredBy: name })
+    })
     void this.dependencies.warm(record).catch(() => undefined)
     // Link the ask that produced this answer, so it counts with its later repeats.
     if (this.latestQuestionEventId) store.updateEvent(this.latestQuestionEventId, { answerRecordId: record.id })
-    console.log(`[store] pair ${record.id}: "${record.question}" -> "${record.answer}"`)
+    console.log(`[store] pair ${record.id}: "${record.question}" -> "${record.answer}"${answeredBy ? ` (${answeredBy})` : ''}`)
     return true
+  }
+
+  /**
+   * A line from someone else that answers no open question but changes a stored answer ("Lunch moved to 1"):
+   * saved word for word as the newest answer to that question.
+   */
+  private async checkUpdate(u: Utterance) {
+    if (this.closed || this.paused || u.role !== 'other') return
+    const candidates = mightUpdate(u.text, store.answerable().filter(r => r.question && !r.remindAt))
+    if (!candidates.length) return
+    let target: QARecord | null
+    try {
+      target = await (this.dependencies.findUpdate ?? findUpdate)(u.text, candidates)
+    } catch (e) {
+      return void console.warn(`[store ${this.name}] update check failed: ${(e as Error).message}`)
+    }
+    if (!target || this.closed || this.paused) return
+    const voice = u.name ? null : await this.voices?.voiceFor(u.id, ANSWERER_WAIT_MS)
+    const now = new Date().toISOString()
+    const record: QARecord = {
+      id: store.newId('qa'), question: target.question, answer: u.text, askedAt: now, answeredAt: now,
+      answeredBy: u.name ?? voice?.name ?? null, source: 'spoken', standing: false, replaces: target.id,
+    }
+    const forDate = dayOf(u.text) ?? target.forDate
+    if (forDate) record.forDate = forDate
+    store.upsert(record)
+    void this.dependencies.warm(record).catch(() => undefined)
+    console.log(`[store] update ${record.id} replaces ${target.id}: "${target.answer}" -> "${record.answer}"`)
   }
 
   private close() {
     if (!sessions.delete(this)) return
     this.closed = true
     this.invalidateWindow()
+    this.voices?.close()
     console.log(`[ws ${this.name}] closed`)
     void this.speech?.close().catch(() => undefined)
   }

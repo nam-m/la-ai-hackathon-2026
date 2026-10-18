@@ -3,6 +3,7 @@ import { Mic, type MicState } from './audio'
 import { RoleWindow, Recording, dbfs } from './debug'
 import { Glasses } from './display'
 import { gestureOf, type Gesture } from './gestures'
+import { Locator, type Fix } from './location'
 import { mountPhone } from './phone'
 import type { ServerMessage } from './protocol'
 import { ServerSocket, type SocketState } from './socket'
@@ -32,6 +33,7 @@ paused = saved.paused
 
 const socket = new ServerSocket({ onMessage: handleServer, onState: handleSocketState })
 const mic = new Mic(bridge, { onChunk: handleChunk, onState: handleMicState })
+const locator = new Locator(bridge, handleFix)
 
 try {
   glasses = await Glasses.create(bridge, view => phone.setView(view))
@@ -67,6 +69,7 @@ socket.start()
 // The glasses mic needs the startup page, which exists by now. Not awaited:
 // a slow audioControl must not hold up anything else.
 if (!paused) void mic.ensureOn()
+void locator.start()
 
 function handleServer(msg: ServerMessage) {
   switch (msg.type) {
@@ -74,6 +77,10 @@ function handleServer(msg: ServerMessage) {
       glasses?.showAnswer(msg)
       phone.setLastAnswer(msg)
       persist()
+      return
+    case 'speaker':
+      glasses?.showSpeaker(msg.name)
+      phone.setSpeaker(msg)
       return
     case 'clear':
       glasses?.dismiss()
@@ -102,6 +109,17 @@ function handleSocketState(state: SocketState) {
   }
   // Every new connection starts out listening on the server side.
   if (state === 'open' && paused) socket.send({ v: 1, type: 'control', action: 'pause' })
+  // A new connection is a new server session: it doesn't know where we are yet.
+  if (state === 'open' && locator.last) sendFix(locator.last)
+}
+
+function handleFix(fix: Fix, source: 'gps' | 'fake') {
+  phone.setLocation(fix, source)
+  sendFix(fix)
+}
+
+function sendFix(fix: Fix) {
+  socket.send({ v: 1, type: 'location', ...fix })
 }
 
 function handleMicState(state: MicState) {
@@ -208,6 +226,7 @@ function cleanup() {
   cleanedUp = true
   clearInterval(rateTimer)
   unsubscribe()
+  locator.stop()
   socket.stop()
   void mic.off()
 }

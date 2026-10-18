@@ -1,30 +1,33 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { config } from './config.js'
-import type { DaySummary, LogEntry, PatternsReport, QARecord, QuestionEvent, RunKind, ToneRecord, TranscriptLine } from './types.js'
+import type { DaySummary, LogEntry, PatternsReport, QARecord, QuestionEvent, RunKind, ToneRecord, TranscriptLine, VoiceRecord } from './types.js'
 
 /**
  * Q&A store: in memory, saved to a JSON file so it survives restarts.
  * Embeddings are cached here too so we only embed each question once.
  * Also keeps today's transcript, question events and tone records for the dashboard and Creao,
- * what Creao sends back (per-day log, summary, patterns) and the run ID -> kind registry.
+ * what Creao sends back (per-day log, summary, patterns), the run ID -> kind registry and the named voices.
  */
 type Day = { log: LogEntry[]; summary?: DaySummary; patterns?: PatternsReport; openQuestions?: Record<string, unknown> }
+/** The wearer's home, set on the debug dashboard from where the glasses are; "Where am I?" measures from it. */
+export type Home = { lat: number; lon: number; label: string | null; at: string }
 type StoreFile = {
   records: QARecord[]
   embeddings: Record<string, number[]>
   transcript: TranscriptLine[]
   events: QuestionEvent[]
   tones: ToneRecord[]
-  settings: { toneAnalysis: boolean }
+  settings: { toneAnalysis: boolean; home?: Home }
   days: Record<string, Day>
   runs: Record<string, RunKind>
   lastRun: Partial<Record<RunKind, string>> // local date of the last scheduled run per kind
+  voices: VoiceRecord[] // named voices only; kept until deleted on the voice dashboard
 }
 
 const KEEP_DAYS = 7
 const empty = (): StoreFile => ({
-  records: [], embeddings: {}, transcript: [], events: [], tones: [], settings: { toneAnalysis: true }, days: {}, runs: {}, lastRun: {},
+  records: [], embeddings: {}, transcript: [], events: [], tones: [], settings: { toneAnalysis: true }, days: {}, runs: {}, lastRun: {}, voices: [],
 })
 let data: StoreFile = empty()
 let saveTimer: NodeJS.Timeout | null = null
@@ -66,14 +69,15 @@ export function localDate(iso: string) {
 const today = () => localDate(new Date().toISOString())
 
 /**
- * A record can still be shown: standing, a pending reminder, or answered today; and never past expiresAt.
+ * A record can still be shown: standing, a pending reminder, answered today, or about a day that hasn't ended
+ * ("Dinner tomorrow is at 7" lives through tomorrow); and never past expiresAt.
  * Spoken records and non-standing facts expire at local midnight.
  */
 const isLive = (r: QARecord) => {
   if (r.expiresAt && Date.parse(r.expiresAt) <= Date.now()) return false
   if (r.standing) return true
   if (r.remindAt) return Date.parse(r.remindAt) > Date.now() - 86_400_000
-  return localDate(r.answeredAt) === today()
+  return localDate(r.answeredAt) === today() || (r.forDate !== undefined && r.forDate >= today())
 }
 
 export function pruneExpired() {
@@ -150,6 +154,10 @@ export const answerable = () => data.records.filter(r => r.question && isLive(r)
 const isToday = (iso: string) => localDate(iso) === today()
 
 export function addTranscript(line: TranscriptLine) { data.transcript.push(line); scheduleSave() }
+export function updateTranscript(id: string, patch: Partial<TranscriptLine>) {
+  const l = data.transcript.find(x => x.id === id)
+  if (l) { Object.assign(l, patch); scheduleSave() }
+}
 export function addEvent(e: QuestionEvent) { data.events.push(e); scheduleSave() }
 export function updateEvent(id: string, patch: Partial<QuestionEvent>) {
   const e = data.events.find(x => x.id === id)
@@ -217,6 +225,16 @@ export const runRegistry = {
   peek: (runId: string) => data.runs[runId],
   has: (runId: string) => runId in data.runs,
 }
+
+// ---- named voices ----
+export const listVoices = () => data.voices
+export function saveVoice(v: VoiceRecord) {
+  const i = data.voices.findIndex(x => x.id === v.id)
+  if (i >= 0) data.voices[i] = v
+  else data.voices.push(v)
+  scheduleSave()
+}
+export function deleteVoice(id: string) { data.voices = data.voices.filter(v => v.id !== id); scheduleSave() }
 
 export const lastRun = (kind: RunKind) => data.lastRun[kind]
 export function setLastRun(kind: RunKind, date: string) { data.lastRun[kind] = date; scheduleSave() }
