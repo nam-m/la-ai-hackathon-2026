@@ -4,7 +4,7 @@ Version 4.2 · 17 October 2026 · Hackathon edition (corrects v3.0; tone uses em
 
 ## 1. Scope
 
-Build what can be demoed on a real Even G2 by **feature freeze, Sunday 9:30 AM**. Submissions close at noon.
+Build what can be demoed on a real Even G2 by **feature freeze, Sunday 11 AM**. Submissions close at noon.
 
 The product: G2 glasses quietly answer the questions a person with early dementia keeps repeating, using answers their family already gave. The family sees what happened through a Creao dashboard, including the estimated tone of the wearer's voice.
 
@@ -209,7 +209,7 @@ Contracts 1 to 6 in the build guide stay. Additions:
 | Sun 3 AM | Tone records stored for wearer questions; dashboard shows facts and today's log |
 | Sun 5 AM | Log and summary agents use transcript and tone; repeated-question view with tone trend |
 | Sun 7 AM | Patterns on seeded history; stretch items if time allows |
-| **Sun 9:30 AM** | **Feature freeze.** Beta packaged, then everyone on pitch, demo and Devpost |
+| **Sun 11 AM** | **Feature freeze.** Beta packaged, then everyone on pitch, demo and Devpost |
 
 ## 12. Acceptance (what we check before the demo)
 
