@@ -91,7 +91,7 @@ A and B sit together for the loudness test; B and C agree on the speech module's
 
 ## Timeline
 
-Feature freeze is 11 AM Sunday (moved from 9:30 AM; the steps after it have no fixed times, we do them as we go); submissions close at noon. Every phase ends with something that works end to end.
+There is no feature freeze (removed Sunday 10:48 AM): we keep building and gluing the parts together, with no fixed times for the steps after, until submissions close at noon. Every phase ends with something that works end to end.
 
 1. **Sat 4–8 PM: Hello, glasses.** Template running on the G2, loudness test done and transcription service chosen by 6 PM, live transcript reaching the server, our server answering a test call from the phone. The Even table closes at 8 PM, so solve hardware problems before then.
 2. **Sat 8 PM–2 AM: The core loop.** Q&A capture, repeat matching, the one-line answer on the glasses. Milestone: a repeated question shows its earlier answer.

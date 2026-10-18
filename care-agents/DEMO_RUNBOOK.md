@@ -67,7 +67,7 @@ Remove the agents and the glasses cannot learn what is missing, keep answers cur
 
 Run share links are not created yet. Creating them makes a run viewable by anyone with the link, so Nam approves first.
 
-## Before the freeze (11 AM) checklist
+## Checklist before you present (no freeze)
 
 1. Share links for the four runs (needs Nam's OK).
 2. Confirm the agent IDs above match what the Devpost README shows (the CREAO URL is `/apps/<id>`).

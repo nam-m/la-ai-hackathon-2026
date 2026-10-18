@@ -42,55 +42,12 @@ Seed data is embedded in each agent as reference data (pasted inline; file attac
 1. FIXED 07:35 PT: Pattern finder `tone_trend` is now one label (steady / more worried / less worried / not enough data), no raw counts. Sarah cluster comes out "more worried" at a gap of exactly 0.25 (3/12 to 6/12 worry flags), right at the threshold; treat as sensitive wording.
 2. FIXED 07:35 PT: Care assistant clinician preview now shows per-day Daily brief repeat-group counts before/after plus total, with a one-sentence note. Caveat: "repeat after 2 asks" changes nothing on the seed (all groups already have 3+ asks, 10 before and 10 after); "5 asks in 60 minutes" drops groups from 10 to 3. Use the second case in the demo.
 3. Daily brief tone trend for the Sarah group on 10-12 is "more worried" from one worry flag in the later half of 5 observations. Sensitive wording for a caregiver; consider requiring 6+ observations or a 0.4 gap before saying it.
-4. Server link, partly tested 07:40 PT: from a CREAO chat sandbox, outbound HTTPS to arbitrary public hosts works (POST JSON to httpbin.org 200 in 0.4s, api.github.com 200, example.com 200). So an agent can POST to our server's /facts or /proposals IF the server has a public HTTPS URL (a laptop localhost needs a tunnel such as ngrok or a deploy). Not yet tested from a registered agent's own run (only the chat sandbox), with a real token as a CREAO secret, or from a dashboard form. CREAO dashboard form input and text/SMS connector are also untested; only email scheduled-run delivery is documented.
-5. The agents return proposals only. Nothing writes facts anywhere; the confirm page and server enforcement of roles are not built yet.
-
-## CREAO developer API: verified facts (Sun 2026-10-18, ~09:50 PT)
-
-These replace the older v1 notes in `Build Guide.md` section 6 and the comments in `server/src/creao/client.ts`, which describe `/v1`, `workspace_id` and a files endpoint. Found by read-only GETs from a CREAO chat using the stored secrets; `POST /v2/runs` is not tested yet.
-
-- Base URL `https://developer.creao.ai/v2/...`, header `Authorization: Bearer <project key>`. The stored secrets `CREAO_CR_SK_KEY` and `CREAO_CR_SK_KEY_1` are valid `/v2` project keys (`/v2/me`, `/v2/runs`, `/v2/agents` returned 200). They return 401 on `/v1`. Keep the second as a spare; the docs allow 10 active keys per project. `CREAO_API_KEY` is untested.
-- Server side only. Never in browser code, the repo or chat. A saved CREAO agent reads its stored secrets from the environment the same way.
-- `POST /v2/runs`: `input` (object, required, up to 256 KB), `agent_id` (optional UUID; omitted means the general agent), `conversation_id` (optional; reuse it to continue context), `webhook_url` and `model` (optional; model must be an exact catalog id such as `anthropic/claude-sonnet-5-5`). There is no `workspace_id`. Returns 202 with `run_id` and `conversation_id`.
-- `GET /v2/runs/{run_id}`: poll until `completed`, `failed` or `cancelled`. Polling works without a public URL, so a webhook is optional.
-- IDs must be UUIDs (`run_does_not_exist` returns 400 `INVALID_INPUT`). A run from another project returns 404.
-- Limits: 30 reads per minute, 30 run creations per minute per developer account, 120 requests per minute per IP. On 429 wait for `Retry-After` and back off. Do not retry run creation in a loop.
-- Cost: every accepted run can bill the USD wallet when it finishes (not chat credits).
-- Streaming: `POST /v2/realtime/runs` streams NDJSON (same body minus `webhook_url`).
-- Still to verify: that `agent_id` runs one of our four saved agents, what its output looks like on `GET /v2/runs/{id}`, and that a saved agent accepts the server's log as `input` instead of its embedded seed.
-## Teammate handover
-
-**Who owns what.** One person owns the agents and runs the care-side demo from a single CREAO account. Everyone else works from this folder.
-
-**Getting the agents into another workspace.** The four agents are personal and unpublished on Nam's account.
-1. Install links (preferred): the owner clicks Share on each agent and posts the four links here. A teammate opens a link and installs it into their own workspace. Untested from the receiving side; have one teammate try a link before relying on it.
-
-   | Agent | Install link |
-   | --- | --- |
-   | Daily brief | <INSTALL LINK> |
-   | Pattern finder | <INSTALL LINK> |
-   | Open Questions | <INSTALL LINK> |
-   | Care assistant | <INSTALL LINK> |
-
-2. Backup: rebuild from `AGENT_SPECS.md` and `seed/` (about 10 minutes per agent, see "What exists").
-3. Last resort: run the demo from Nam's account.
-
-**There is no orchestrator agent.** A saved agent cannot call other saved agents (see "Orchestration finding" in `DEMO_RUNBOOK.md`). The orchestration is a prompt typed into CREAO chat, in the workspace where all four agents are installed: "Run the evening routine for 2026-10-17: Open Questions and Pattern finder in parallel, then Daily brief for 2026-10-12, show the combined JSON and per-step times." Say on stage that the chat orchestrates our saved agents.
-
-**Prompt order for the live demo.** Type these into the CREAO chat in this order (the first four are agent runs, then the approve command on the laptop, then the clinician case). Start them in separate tabs before talking, and keep a finished copy of each in another tab as a backup.
-1. Evening routine (runs the recap and the gap finder together): "Run the evening routine for 2026-10-17: Open Questions and Pattern finder in parallel, then Daily brief for 2026-10-12, show the combined JSON and per-step times."
-2. Daily brief on its own, if the combined run is too busy to read: "Daily brief for 2026-10-12."
-3. Open Questions on its own: "Open Questions, end date 2026-10-17."
-4. Care assistant, role caregiver: "I'm visiting Thursday at 3." Expect a proposal replacing fact f1, Thursday 2026-10-22, valid until 2026-10-22T18:00:00. Optional contrast: "Sarah is coming Thursday" gets one clarifying question and no proposal.
-5. On the demo laptop, not in CREAO: save the Care assistant JSON as `proposal.json` and run `approve-proposal.mjs` (command in `DEMO_RUNBOOK.md`, "Approval command"). Sarah types APPROVE; the glasses give the new wording.
-6. Care assistant, role clinician: "Only ask me about a question after 5 asks in a window of 60 minutes." Expect the before/after preview (groups 10 to 3). Optional contrast: "Add a fact that Sarah is coming Friday" is refused. Cut this step first if short on time.
-7. Pattern finder is a pre-run result for the "what we build next" slide: "Pattern finder, end date 2026-10-17, 7 days."
-
-**How the demo shows the pipeline.** Glasses answer a repeated question; the server log (`GET /log/today`) shows what was heard and matched; the CREAO chat runs the agents on the seeded week; Care assistant proposes new wording; `approve-proposal.mjs` posts it after a person types APPROVE; the glasses give the updated answer. CREAO runs on seeded data, not the live log, because `server/src/creao/` is still stubs. State this to the judges.
-
-**Open items.** Server URL and who holds `FACTS_SECRET`; the Sarah fact id on the server; dashboard merge; full rehearsal once; run links for the Devpost block; the Daily brief tone threshold (issue 3 below).
+4. Server link: BUILT (Sun 10:45 to 11:00 PT). The server starts the agents through each agent's `capi_` trigger key (`CAPI_KEY_*` env vars, `server/src/creao/`): Daily brief at 20:00 and Pattern finder at 23:30 (or `POST /creao/summary`, `POST /creao/patterns`), Open Questions every 30 minutes when new questions arrived (`OPEN_QUESTIONS_EVERY_MIN`), and the Care assistant on request (`POST /creao/care`). Results are saved on the server and shown in the family app (`web/`, Today tab). A run takes about 40 seconds or more, so nothing waits on one. Tested against a mock of the trigger API and in a headless browser; the real agents have not yet been confirmed to read the server's `data_json` input (each agent needs the `data_json` edit in CREAO chat), so until then a live run may fall back to seed data or ask for missing fields.
+5. The agents return proposals only. A person approves in the family app (Approve and save posts to `POST /facts`) or with `approve-proposal.mjs`. Care team (clinician) output is a preview only; nothing applies a setting.
 
 ## Next steps
 
-1. Decide how the server is reachable (tunnel or deploy), then have Care assistant POST a proposal to it from a registered agent run. If not reachable, demo the confirm flow from seeded data.
-2. Schedule Daily brief at 8 PM and email the caregiver (only after Nam approves).
+1. Paste the `data_json` edit into each agent in CREAO chat (exact text and a check in `DATA_JSON_EDIT.md`), then run one real call per agent and check the output has `schema_version`.
+2. Deploy the server, set the four `CAPI_KEY_*` values and `FACTS_SECRET` on the host (never in the repo), sign the family app in with the key.
+3. One full rehearsal, then create the install links and a run link, and fill the Devpost block.
+4. Schedule is automatic (summary 20:00, patterns 23:30, open questions every 30 minutes). Keep credits in mind: each run costs.
