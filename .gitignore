@@ -1,0 +1,12 @@
+node_modules
+.env
+.env.*
+!.env.example
+*.pcm
+*.wav
+*.log
+data/
+dist/
+.DS_Store
+.venv/
+__pycache__/

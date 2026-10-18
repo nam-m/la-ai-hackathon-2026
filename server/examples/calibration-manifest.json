@@ -1,0 +1,8 @@
+{
+  "recordings": [
+    { "label": "wearer", "path": "../data/wearer-1.wav" },
+    { "label": "wearer", "path": "../data/wearer-2.wav" },
+    { "label": "other", "path": "../data/teammate-1.wav" },
+    { "label": "other", "path": "../data/teammate-2.wav" }
+  ]
+}

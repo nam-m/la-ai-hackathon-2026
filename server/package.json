@@ -1,0 +1,33 @@
+{
+  "name": "asked-answered-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.9" },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test:matcher": "tsx scripts/test-matcher.ts",
+    "fake-phone": "tsx scripts/fake-phone.ts",
+    "seed-facts": "tsx scripts/seed-facts.ts",
+    "build": "tsc && node -e \"const fs=require('node:fs');fs.copyFileSync('scripts/fake-script.txt','dist/scripts/fake-script.txt');fs.cpSync('scripts/recorder-web','dist/scripts/recorder-web',{recursive:true})\"",
+    "test": "tsx --test test/*.test.ts",
+    "speech:demo": "tsx scripts/speech-demo.ts",
+    "speech:record": "node --env-file-if-exists=.env --import tsx scripts/speech-record.ts",
+    "speech:calibrate": "tsx scripts/calibrate-speech.ts",
+    "speech:replay": "node --env-file-if-exists=.env --import tsx scripts/replay-speech.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "tsx": "^4.19.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.2"
+  }
+}
