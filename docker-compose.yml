@@ -1,8 +1,8 @@
-# Runs the server and the tone service together.
+# Runs the server, the tone service and the family web app together.
 #   cp server/.env.example server/.env   (server keys)
 #   cp .env.example .env                 (TONE_SECRET and tone settings, read by this file)
 #   docker compose up --build
-# Server: http://localhost:8080   Tone service: http://localhost:8000
+# Family app: http://localhost:3000   Server: http://localhost:8080   Tone service: http://localhost:8000
 services:
   server:
     build: ./server
@@ -35,6 +35,19 @@ services:
       - "${TONE_HOST_PORT:-8000}:8000"
     volumes:
       - tone-models:/models   # keeps the downloaded model between restarts
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      args:
+        VITE_WEARER_NAME: ${VITE_WEARER_NAME:-Rose}   # baked in at build time: rebuild after changing it
+    init: true
+    # nginx serves the app and proxies the API to the server service (web/nginx.conf), so no CORS or API URL to set.
+    ports:
+      - "${WEB_HOST_PORT:-3000}:80"
+    depends_on:
+      - server
     restart: unless-stopped
 
 volumes:

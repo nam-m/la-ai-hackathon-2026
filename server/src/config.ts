@@ -63,6 +63,8 @@ export const config = {
   // Server-driven Creao runs, wearer's local time, HH:MM.
   summaryAt: hhmm('SUMMARY_AT', '20:00'),
   patternsAt: hhmm('PATTERNS_AT', '23:30'),
+  // A demo day (src/demo.ts) on the glasses and the dashboard, under real data.
+  demoData: env('DEMO_DATA') === '1',
   // /debug/* routes; off when NODE_ENV=production (the Dockerfile sets it).
   debugRoutes: env('NODE_ENV') !== 'production',
 }

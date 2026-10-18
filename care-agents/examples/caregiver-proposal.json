@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "role": "caregiver",
+  "intent": "update_fact",
+  "proposal": {
+    "action": "replace_fact",
+    "replaces_fact_id": "f1",
+    "question": "When is Sarah coming?",
+    "answer_wording": "Your daughter Sarah is visiting Thursday, October 22 at 3 PM.",
+    "valid_until": "2026-10-22T18:00:00"
+  },
+  "clarifying_question": null,
+  "settings_change": null,
+  "preview": null,
+  "rejected_reason": null,
+  "sources": ["f1"]
+}

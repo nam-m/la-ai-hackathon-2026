@@ -30,7 +30,8 @@ With `SPEECH_PROVIDER=fake`, the server replays `scripts/fake-script.txt` as if 
 | `src/store.ts` | C | Q&A records and cached embeddings, saved to a JSON file |
 | `src/types.ts` | all | Contract shapes |
 | `src/speech/index.ts` | **B** | ElevenLabs live speech, Deepgram fallback, fake provider; [Role B setup and calibration](src/speech/README.md) |
-| `src/creao/index.ts` | **D** | Creao module; ships as logging stubs. D replaces them |
+| `src/creao/index.ts` | **D** | Creao module: `runSummary` and `runPatterns` start the saved agents through `capi.ts`; `submitClip`, `submitLog` and `handleWebhook` are still logging stubs |
+| `src/creao/capi.ts`, `input.ts` | D | Trigger API client (one `capi_` key per agent, env vars) and the builder that turns server events, tone and facts into the agents' `data_json` input |
 | `src/emotion/index.ts` | C | Cuts each wearer question's audio, sends it to `tone-service/`, stores the tone record |
 | `src/wav.ts` | C | WAV header and the 60-second rolling audio buffer |
 
@@ -38,15 +39,18 @@ With `SPEECH_PROVIDER=fake`, the server replays `scripts/fake-script.txt` as if 
 
 | Method and path | Auth | Purpose |
 | --- | --- | --- |
-| `GET /health` | none | Status, session count, which matcher is active |
+| `GET /health` | none | Status, session and paused counts, which matcher is active |
 | `WS /ws?token=APP_TOKEN` | token | Phone socket, contract 1 |
 | `POST /facts` | `Bearer FACTS_SECRET` | Add or replace caregiver facts and reminders |
+| `GET /facts` | `Bearer FACTS_SECRET` | Family facts still in use, for the dashboard |
 | `DELETE /facts/:id` | `Bearer FACTS_SECRET` | Remove one fact |
+| `GET /summary/today` | `Bearer FACTS_SECRET` | Today's Creao summary as the webhook saved it, or `null` |
 | `GET /qa/today` | `Bearer FACTS_SECRET` | Today's spoken pairs for the dashboard |
-| `GET /log/today` | `Bearer FACTS_SECRET` | Transcript, every question with its tone, repeated questions with counts and worry per ask, contradictions (spoken answer vs family fact), reminders with `scheduled`/`sent`/`missed` |
+| `GET /log/today` | `Bearer FACTS_SECRET` | Transcript, every question with its tone, repeated questions with counts, worry per ask and `asks` (shown?, who answered), contradictions (spoken answer vs family fact), reminders with `scheduled`/`sent`/`missed` |
 | `GET`/`POST /settings` | `Bearer FACTS_SECRET` | `{"toneAnalysis": true\|false}` |
 | `POST /creao/webhook?s=WEBHOOK_SECRET` | secret in the URL (`webhookUrl()` in `config.ts`), separate from `FACTS_SECRET`; D's handler also verifies run IDs | Creao run results |
 | `POST /creao/summary` | `Bearer FACTS_SECRET` | Trigger the end-of-day summary by hand in the demo |
+| `POST /demo/reset` | `Bearer FACTS_SECRET` | Replace the demo day with a fresh one. Only served with `DEMO_DATA=1` |
 | `POST /debug/match` | `Bearer FACTS_SECRET` | `{"question":"..."}` → what the matcher would answer, with its score. Not served when `NODE_ENV=production` (the Dockerfile sets it) |
 
 ## Background jobs
@@ -55,6 +59,7 @@ With `SPEECH_PROVIDER=fake`, the server replays `scripts/fake-script.txt` as if 
 - **Creao log:** every 5 minutes, `submitLog` with new transcript, pairs, questions and tone (window ends 15 s ago).
 - **Summary and patterns:** `runSummary` at `SUMMARY_AT` (20:00) and `runPatterns` at `PATTERNS_AT` (23:30), wearer's local time, once a day, within 15 minutes after the time (a server started later doesn't fire them). The window doesn't cross midnight, so keep both at 23:45 or earlier. A missed or failed run isn't retried; use `POST /creao/summary`.
 - **Reminders:** sent to listening phones within 5 minutes of `remindAt`, otherwise marked `missed`; the status shows in `/log/today`. No backlog after a reconnect.
+- **Demo day:** with `DEMO_DATA=1`, `src/demo.ts` seeds a realistic morning (`demo_` ids, times relative to now) at startup and again once the date turns over; starting with it off removes any demo day left in the store. Its facts and spoken answers are live, so the glasses answer from them too ("Where is Mary?"; lunch is at noon in both the spoken answer and the family note, so a live "noon" is answered). Real asks, facts and summaries add to it; it's never sent to Creao.
 - **Tone health check:** every 30 s while tone is on, so `/health` shows an outage (`degraded`, then `unreachable` after 3 failed checks) and a recovery within about 30 s, even with no questions coming in. Logs only on changes.
 
 ## Tuning the matcher

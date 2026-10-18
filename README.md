@@ -8,6 +8,7 @@ Even G2 glasses that quietly answer the questions a person with early dementia k
 | `server/` | C: Server and matching | Working; see `server/README.md` |
 | `server/src/speech/` | B: Speech | ElevenLabs, Deepgram fallback, fake replay; [setup and hardware checks](server/src/speech/README.md) |
 | `server/src/creao/` | D: Creao | Logging stubs; replace with real Creao calls |
+| `web/` | Family app | React frontend for caregivers (Today, Facts, Settings); see `web/README.md` |
 | `server/src/emotion/` + `tone-service/` | C | Tone of voice with emotion2vec+; see `tone-service/README.md` |
 
 Quick start:
@@ -34,7 +35,7 @@ TONE_MOCK=1 uvicorn app:app --port 8000
 ```bash
 cp server/.env.example server/.env    # server keys (Gemini, speech, Creao, APP_TOKEN, FACTS_SECRET)
 cp .env.example .env                  # TONE_SECRET and tone settings; compose gives these to both services
-docker compose up --build             # server on :8080, tone service on :8000
+docker compose up --build             # family app on :3000, server on :8080, tone service on :8000
 ```
 
 The first build takes a while (PyTorch), and the first start downloads the emotion2vec+ model into a volume, so do both on good Wi-Fi before the demo. Check `http://localhost:8080/health`: `tone.state` turns `on` only after the server has reached the tone service with its model loaded (`not reached yet` until then). `docker compose ps` shows the tone container `healthy` once the model is loaded. For mock mode in Docker: `TONE_MOCK=1` in the root `.env`, not in `server/.env`.

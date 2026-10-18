@@ -1,0 +1,137 @@
+{
+ "date": "2026-10-14",
+ "events": [
+  {
+   "id": "e-2026-10-14-001",
+   "at": "2026-10-14T15:23:00",
+   "role": "wearer",
+   "text": "When does Sarah visit?",
+   "matched_fact_id": "f1",
+   "score": 0.86,
+   "decision": "answered",
+   "tone": {
+    "top": "sad",
+    "worry": true,
+    "quality": "ok"
+   }
+  },
+  {
+   "id": "e-2026-10-14-002",
+   "at": "2026-10-14T16:02:00",
+   "role": "wearer",
+   "text": "Is Sarah coming today?",
+   "matched_fact_id": "f1",
+   "score": 0.89,
+   "decision": "answered",
+   "tone": {
+    "top": "neutral",
+    "worry": false,
+    "quality": "ok"
+   }
+  },
+  {
+   "id": "e-2026-10-14-003",
+   "at": "2026-10-14T16:15:00",
+   "role": "wearer",
+   "text": "When does Sarah visit?",
+   "matched_fact_id": "f1",
+   "score": 0.94,
+   "decision": "answered",
+   "tone": {
+    "top": "happy",
+    "worry": false,
+    "quality": "ok"
+   }
+  },
+  {
+   "id": "e-2026-10-14-004",
+   "at": "2026-10-14T16:46:00",
+   "role": "wearer",
+   "text": "When does Sarah visit?",
+   "matched_fact_id": "f1",
+   "score": 0.87,
+   "decision": "answered",
+   "tone": {
+    "top": "sad",
+    "worry": true,
+    "quality": "ok"
+   }
+  },
+  {
+   "id": "e-2026-10-14-005",
+   "at": "2026-10-14T10:20:00",
+   "role": "wearer",
+   "text": "What are we having for dinner?",
+   "matched_fact_id": null,
+   "score": 0.25,
+   "decision": "abstained",
+   "tone": {
+    "top": "happy",
+    "worry": false,
+    "quality": "ok"
+   }
+  },
+  {
+   "id": "e-2026-10-14-006",
+   "at": "2026-10-14T14:05:00",
+   "role": "wearer",
+   "text": "What are we having for dinner?",
+   "matched_fact_id": null,
+   "score": 0.23,
+   "decision": "abstained",
+   "tone": {
+    "top": "neutral",
+    "worry": false,
+    "quality": "ok"
+   }
+  },
+  {
+   "id": "e-2026-10-14-007",
+   "at": "2026-10-14T17:40:00",
+   "role": "wearer",
+   "text": "What are we having for dinner?",
+   "matched_fact_id": null,
+   "score": 0.34,
+   "decision": "abstained",
+   "tone": {
+    "top": "happy",
+    "worry": false,
+    "quality": "ok"
+   }
+  },
+  {
+   "id": "e-2026-10-14-008",
+   "at": "2026-10-14T18:10:00",
+   "role": "wearer",
+   "text": "What are we having for dinner?",
+   "matched_fact_id": null,
+   "score": 0.22,
+   "decision": "abstained",
+   "tone": {
+    "top": "happy",
+    "worry": false,
+    "quality": "ok"
+   }
+  },
+  {
+   "id": "e-2026-10-14-009",
+   "at": "2026-10-14T09:15:00",
+   "role": "wearer",
+   "text": "Where do I live?",
+   "matched_fact_id": "f2",
+   "score": 0.91,
+   "decision": "answered",
+   "tone": {
+    "top": "happy",
+    "worry": false,
+    "quality": "ok"
+   }
+  },
+  {
+   "id": "e-2026-10-14-010",
+   "at": "2026-10-14T12:00:00",
+   "role": "other",
+   "text": "Lunch is ready when you are."
+  }
+ ]
+}

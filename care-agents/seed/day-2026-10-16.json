@@ -1,0 +1,33 @@
+{
+ "date": "2026-10-16",
+ "events": [
+  {
+   "id": "e-2026-10-16-001",
+   "at": "2026-10-16T11:30:00",
+   "role": "wearer",
+   "text": "What day is it?",
+   "matched_fact_id": "f3",
+   "score": 0.88,
+   "decision": "answered",
+   "tone": {
+    "top": "neutral",
+    "worry": false,
+    "quality": "ok"
+   }
+  },
+  {
+   "id": "e-2026-10-16-002",
+   "at": "2026-10-16T16:10:00",
+   "role": "wearer",
+   "text": "Where are my slippers?",
+   "matched_fact_id": null,
+   "score": 0.22,
+   "decision": "abstained",
+   "tone": {
+    "top": "happy",
+    "worry": false,
+    "quality": "ok"
+   }
+  }
+ ]
+}

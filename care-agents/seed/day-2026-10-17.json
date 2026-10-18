@@ -1,0 +1,73 @@
+{
+ "date": "2026-10-17",
+ "events": [
+  {
+   "id": "e-2026-10-17-001",
+   "at": "2026-10-17T09:00:00",
+   "role": "wearer",
+   "text": "what?",
+   "matched_fact_id": null,
+   "score": 0.1,
+   "decision": "abstained",
+   "tone": {
+    "top": "neutral",
+    "worry": false,
+    "quality": "low"
+   }
+  },
+  {
+   "id": "e-2026-10-17-002",
+   "at": "2026-10-17T09:01:00",
+   "role": "wearer",
+   "text": "huh",
+   "matched_fact_id": null,
+   "score": 0.1,
+   "decision": "abstained",
+   "tone": {
+    "top": "neutral",
+    "worry": false,
+    "quality": "low"
+   }
+  },
+  {
+   "id": "e-2026-10-17-003",
+   "at": "2026-10-17T13:00:00",
+   "role": "other",
+   "text": "Dinner is at six."
+  },
+  {
+   "id": "e-2026-10-17-004",
+   "at": "2026-10-17T13:02:00",
+   "role": "other",
+   "text": "Do you want tea?"
+  },
+  {
+   "id": "e-2026-10-17-005",
+   "at": "2026-10-17T13:03:00",
+   "role": "wearer",
+   "text": "ok",
+   "matched_fact_id": null,
+   "score": 0.1,
+   "decision": "abstained",
+   "tone": {
+    "top": "neutral",
+    "worry": false,
+    "quality": "low"
+   }
+  },
+  {
+   "id": "e-2026-10-17-006",
+   "at": "2026-10-17T15:30:00",
+   "role": "wearer",
+   "text": "um",
+   "matched_fact_id": null,
+   "score": 0.1,
+   "decision": "abstained",
+   "tone": {
+    "top": "neutral",
+    "worry": false,
+    "quality": "low"
+   }
+  }
+ ]
+}

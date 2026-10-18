@@ -1,0 +1,92 @@
+{
+ "days": {
+  "2026-10-11": {
+   "wearer_questions": 8,
+   "sarah_visit_questions": 4,
+   "sarah_window": "15:00-17:00",
+   "dinner_unanswered": 3,
+   "worry_flags": 1,
+   "expect_pattern": true,
+   "expect_open_question": false,
+   "expect_no_pattern": false
+  },
+  "2026-10-12": {
+   "wearer_questions": 10,
+   "sarah_visit_questions": 5,
+   "sarah_window": "15:00-17:00",
+   "dinner_unanswered": 4,
+   "worry_flags": 1,
+   "expect_pattern": true,
+   "expect_open_question": false,
+   "expect_no_pattern": false
+  },
+  "2026-10-13": {
+   "wearer_questions": 10,
+   "sarah_visit_questions": 6,
+   "sarah_window": "15:00-17:00",
+   "dinner_unanswered": 3,
+   "worry_flags": 4,
+   "expect_pattern": true,
+   "expect_open_question": false,
+   "expect_no_pattern": false
+  },
+  "2026-10-14": {
+   "wearer_questions": 9,
+   "sarah_visit_questions": 4,
+   "sarah_window": "15:00-17:00",
+   "dinner_unanswered": 4,
+   "worry_flags": 2,
+   "expect_pattern": true,
+   "expect_open_question": false,
+   "expect_no_pattern": false
+  },
+  "2026-10-15": {
+   "wearer_questions": 9,
+   "sarah_visit_questions": 5,
+   "sarah_window": "15:00-17:00",
+   "dinner_unanswered": 3,
+   "worry_flags": 2,
+   "expect_pattern": true,
+   "expect_open_question": false,
+   "expect_no_pattern": false
+  },
+  "2026-10-16": {
+   "wearer_questions": 2,
+   "sarah_visit_questions": 0,
+   "sarah_window": null,
+   "dinner_unanswered": 0,
+   "worry_flags": 0,
+   "expect_pattern": false,
+   "expect_open_question": false,
+   "expect_no_pattern": true
+  },
+  "2026-10-17": {
+   "wearer_questions": 4,
+   "sarah_visit_questions": 0,
+   "sarah_window": null,
+   "dinner_unanswered": 0,
+   "worry_flags": 0,
+   "expect_pattern": false,
+   "expect_open_question": false,
+   "expect_no_pattern": true
+  }
+ },
+ "expected_open_questions": [
+  {
+   "cluster": "What are we having for dinner?",
+   "min_count": 15,
+   "distinct_times_of_day": 3
+  }
+ ],
+ "expected_patterns": [
+  {
+   "cluster": "When is Sarah coming?",
+   "window": "15:00-17:00",
+   "days": 5
+  }
+ ],
+ "negative_days": [
+  "2026-10-16",
+  "2026-10-17"
+ ]
+}
